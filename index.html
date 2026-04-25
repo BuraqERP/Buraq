@@ -621,7 +621,8 @@
 
     // --- CLOUD AUTHENTICATION (THE FIX FOR THE PASSWORD BUG) ---
     async function authenticateAndLoad() {
-        const token = document.getElementById('auth_token').value.trim();
+        // Scrubs out invisible Unicode characters, emojis, and non-standard text
+const token = document.getElementById('auth_token').value.replace(/[^\x20-\x7E]/g, '').trim();
         const pass = document.getElementById('auth_pass').value;
         const errBox = document.getElementById('auth_error');
         const errMsg = document.getElementById('auth_error_msg');
