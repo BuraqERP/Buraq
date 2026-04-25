@@ -1231,39 +1231,25 @@
             }
         }
         
-        // --- WORKSPACE SWITCHER LOGIC ---
-        function openSecondApp() {
-            const overlay = document.getElementById('app-overlay');
-            const iframe = document.getElementById('app-iframe');
-            
-            overlay.classList.remove('hidden');
-            overlay.classList.add('flex');
-            
-            // Trigger layout for smooth transition
-            setTimeout(() => {
-                overlay.classList.remove('opacity-0');
-                overlay.classList.add('opacity-100');
-            }, 10);
-            
-            if (!iframe.getAttribute('data-loaded')) {
-                const doc = iframe.contentWindow.document;
-                doc.open();
-                doc.write(document.getElementById('second-app-data').value);
-                doc.close();
-                iframe.setAttribute('data-loaded', 'true');
-            }
-        }
-        
-        function closeSecondApp() {
-            const overlay = document.getElementById('app-overlay');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-            
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                overlay.classList.remove('flex');
-            }, 300);
-        }
+       // --- WORKSPACE SWITCHER LOGIC ---
+function openSecondApp() {
+    const overlay = document.getElementById('app-overlay');
+    const iframe = document.getElementById('app-iframe');
+    
+    overlay.classList.remove('hidden');
+    overlay.classList.add('flex');
+    
+    // Trigger layout for smooth transition
+    setTimeout(() => {
+        overlay.classList.remove('opacity-0');
+        overlay.classList.add('opacity-100');
+    }, 10);
+    
+    // STATE OF THE ART: Securely load the external file instead of injecting text
+    if (!iframe.src || iframe.src === window.location.href || iframe.src === '') {
+        iframe.src = 'couriers.html';
+    }
+}
 
         // Initialize icons on load (Dashboard waits behind login screen)
         lucide.createIcons();
