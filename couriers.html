@@ -3,241 +3,842 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buraq Courier Database</title>
+    <title>Buraq Fleet Management System</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: { appBg: '#f8fafc', panelBg: '#ffffff', borderColor: '#e2e8f0', brandAccent: '#2563eb', posGreen: '#10b981', negRed: '#ef4444' }
+                    colors: {
+                        appBg: '#f8fafc',
+                        panelBg: '#ffffff',
+                        borderColor: '#e2e8f0',
+                        navyHeader: '#1e3a8a',
+                        brandAccent: '#2563eb',
+                        textMuted: '#64748b',
+                        textMain: '#1e293b',
+                        posGreen: '#10b981',
+                        negRed: '#ef4444',
+                        wolt: '#0ea5e9',
+                        glovo: '#f59e0b',
+                        bolt: '#10b981',
+                        tazz: '#f97316'
+                    },
+                    boxShadow: {
+                        'premium': '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+                        'premium-hover': '0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04)',
+                        'modal': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                        'input-focus': '0 0 0 4px rgba(37, 99, 235, 0.15)',
+                    }
                 }
             }
         }
     </script>
     <style>
-        body { background-color: theme('colors.appBg'); color: #1e293b; font-size: 14px; overflow-x: hidden; }
+        body { background-color: theme('colors.appBg'); color: theme('colors.textMain'); font-size: 14px; overflow-x: hidden; }
+        
+        /* Premium Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Custom Premium Select Arrows */
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.85rem center;
+            background-size: 1.1rem 1.1rem;
+        }
+
+        /* Datalist Arrow Styling (Webkit) */
+        input::-webkit-calendar-picker-indicator {
+            color: transparent;
+            background: transparent;
+            cursor: pointer;
+            z-index: 1;
+        }
+
+        /* Smooth Animations */
         .modal-enter { animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.96) translateY(-15px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        .toast-enter { animation: slideInRight 0.4s forwards; }
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.96) translateY(-15px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .toast-enter { animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .toast-exit { animation: fadeOut 0.3s ease-in forwards; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; transform: scale(0.96); } }
+        
+        /* Interactive Input Transitions */
+        .premium-input {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .premium-input:focus {
+            transform: translateY(-1px);
+        }
     </style>
 </head>
-<body class="min-h-screen pb-12 antialiased selection:bg-brandAccent selection:text-white">
-    <header class="bg-slate-900 text-white shadow-lg mb-8 border-b border-slate-700">
-        <div class="max-w-[1800px] mx-auto px-6 py-5 flex justify-between items-center">
+<body class="min-h-screen pb-12 antialiased relative selection:bg-brandAccent selection:text-white">
+
+    <header class="bg-navyHeader text-white shadow-lg mb-8">
+        <div class="max-w-[1800px] mx-auto px-6 py-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
             <div class="flex items-center gap-4">
-                <div class="bg-white/10 p-2.5 rounded-xl"><i data-lucide="users" class="w-6 h-6 text-blue-100"></i></div>
-                <h1 class="text-2xl font-extrabold tracking-wide uppercase">Courier Database</h1>
+                <div class="bg-white/10 p-2.5 rounded-xl border border-white/10 shadow-inner backdrop-blur-sm">
+                    <i data-lucide="users" class="w-6 h-6 text-blue-100"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-extrabold tracking-wide uppercase text-slate-50">Courier Database</h1>
+                    
+                </div>
             </div>
-            <button onclick="openFormModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all">
-                <i data-lucide="user-plus" class="w-4 h-4"></i> Add Courier
-            </button>
+            
+            <div class="flex items-center gap-3 w-full lg:w-auto">
+                <button onclick="openFormModal()" class="bg-blue-800/80 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 border border-blue-600 flex-1 lg:flex-none">
+                    <i data-lucide="user-plus" class="w-4 h-4 text-blue-200"></i> Add Courier
+                </button>
+                <input type="file" id="excelUpload" style="display:none;" accept=".xlsx, .xls, .csv" onchange="processExcelImport(event)">
+                <button onclick="document.getElementById('excelUpload').click()" class="bg-white hover:bg-blue-50 text-navyHeader px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2 flex-1 lg:flex-none">
+                    <i data-lucide="file-up" class="w-4 h-4"></i> Import
+                </button>
+            </div>
         </div>
     </header>
 
     <main class="max-w-[1800px] mx-auto space-y-8 px-6">
+        
         <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-l-4 border-l-brandAccent">
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Registered</p>
-                <p class="text-4xl font-extrabold text-slate-800" id="kpi_total">0</p>
+            <div class="bg-white p-6 rounded-2xl border border-borderColor shadow-premium hover:shadow-premium-hover transition-all flex items-center justify-between group border-l-4 border-l-brandAccent">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 group-hover:text-slate-500 transition-colors">Total Registered Fleet</p>
+                    <p class="text-4xl font-extrabold text-slate-800 tracking-tight" id="kpi_total">0</p>
+                </div>
+                <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100/50 group-hover:bg-blue-100 transition-colors">
+                    <i data-lucide="users" class="w-8 h-8 text-brandAccent"></i>
+                </div>
             </div>
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-500">
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Active Working</p>
-                <p class="text-4xl font-extrabold text-posGreen" id="kpi_active">0</p>
+            <div class="bg-white p-6 rounded-2xl border border-borderColor shadow-premium hover:shadow-premium-hover transition-all flex items-center justify-between group border-l-4 border-l-emerald-500">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 group-hover:text-slate-500 transition-colors">Active Working Couriers</p>
+                    <p class="text-4xl font-extrabold text-posGreen tracking-tight" id="kpi_active">0</p>
+                </div>
+                <div class="bg-emerald-50 p-4 rounded-2xl border border-emerald-100/50 group-hover:bg-emerald-100 transition-colors">
+                    <i data-lucide="user-check" class="w-8 h-8 text-emerald-600"></i>
+                </div>
             </div>
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-l-4 border-l-red-500">
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Inactive / Pending</p>
-                <p class="text-4xl font-extrabold text-red-600" id="kpi_inactive">0</p>
+            <div class="bg-white p-6 rounded-2xl border border-borderColor shadow-premium hover:shadow-premium-hover transition-all flex items-center justify-between group border-l-4 border-l-red-500">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 group-hover:text-slate-500 transition-colors">Inactive / Pending</p>
+                    <p class="text-4xl font-extrabold text-red-600 tracking-tight" id="kpi_inactive">0</p>
+                </div>
+                <div class="bg-red-50 p-4 rounded-2xl border border-red-100/50 group-hover:bg-red-100 transition-colors">
+                    <i data-lucide="user-minus" class="w-8 h-8 text-red-600"></i>
+                </div>
             </div>
         </section>
 
-        <section class="border border-slate-200 rounded-2xl bg-white shadow-sm overflow-hidden">
-            <table class="w-full text-left whitespace-nowrap">
-                <thead class="bg-slate-50 border-b border-slate-200">
-                    <tr class="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        <th class="px-4 py-4">ID</th>
-                        <th class="px-4 py-4">Name & Contact</th>
-                        <th class="px-4 py-4">Platform</th>
-                        <th class="px-4 py-4 text-center">Status</th>
-                        <th class="px-4 py-4 text-center">Manage</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody" class="divide-y divide-slate-100 text-sm"></tbody>
-            </table>
+        <section class="flex flex-col xl:flex-row justify-between items-center gap-5 bg-white p-4 border border-borderColor rounded-2xl shadow-premium">
+            
+            <div class="flex flex-col md:flex-row items-center gap-3 w-full xl:w-auto">
+                <select id="filter_platform" onchange="renderTable()" class="px-4 py-2.5 w-full md:w-auto text-sm border border-slate-200 rounded-lg focus:border-brandAccent focus:outline-none focus:ring-1 focus:ring-brandAccent shadow-sm cursor-pointer bg-slate-50 font-semibold text-slate-700 transition-colors hover:bg-white premium-input">
+                    <option value="ALL">Platforms</option>
+                    <option value="WOLT">Wolt Fleet</option>
+                    <option value="GLOVO">Glovo Fleet</option>
+                    <option value="BOLT">Bolt Fleet</option>
+                    <option value="TAZZ">Tazz Fleet</option>
+                </select>
+                
+                <select id="filter_status" onchange="renderTable()" class="px-4 py-2.5 w-full md:w-auto text-sm border border-slate-200 rounded-lg focus:border-brandAccent focus:outline-none focus:ring-1 focus:ring-brandAccent shadow-sm cursor-pointer bg-slate-50 font-semibold text-slate-700 transition-colors hover:bg-white premium-input">
+                    <option value="ALL"> Statuses</option>
+                    <option value="Active">Active Only</option>
+                    <option value="Inactive">Inactive Only</option>
+                </select>
+
+                <div class="relative w-full md:w-72">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                    <input type="text" id="filter_search" placeholder="Search Name, Phone, ID..." oninput="renderTable()" class="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:border-brandAccent focus:outline-none focus:shadow-input-focus shadow-sm bg-slate-50 placeholder:text-slate-400 transition-colors hover:bg-white premium-input">
+                </div>
+                
+                <button onclick="clearFilters()" class="p-2.5 text-slate-400 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:text-slate-700 transition shadow-sm" title="Clear Filters">
+                    <i data-lucide="filter-x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-3 w-full xl:w-auto flex-wrap">
+                <div class="flex gap-2 w-full md:w-auto">
+                    <button onclick="updateBulkStatus('Active')" class="flex-1 md:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 premium-input">
+                        <i data-lucide="check-circle-2" class="w-4 h-4"></i> Mark Active
+                    </button>
+                    <button onclick="updateBulkStatus('Inactive')" class="flex-1 md:flex-none bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 premium-input">
+                        <i data-lucide="ban" class="w-4 h-4"></i> Mark Inactive
+                    </button>
+                </div>
+                
+                <div class="h-6 w-px bg-slate-200 hidden md:block mx-1"></div>
+                
+                <button onclick="executeExcelExport()" class="w-full md:w-auto bg-slate-800 border border-slate-900 text-white hover:bg-slate-700 px-5 py-2.5 rounded-lg text-sm font-bold transition shadow-sm flex items-center justify-center gap-2 premium-input">
+                    <i data-lucide="download-cloud" class="w-4 h-4 text-slate-300"></i> Export Database
+                </button>
+            </div>
+        </section>
+
+        <section class="border border-borderColor rounded-2xl bg-panelBg shadow-premium overflow-hidden">
+            <div class="overflow-x-auto max-h-[650px] overflow-y-auto relative">
+                <table class="w-full text-left border-collapse whitespace-nowrap min-w-max">
+                    <thead class="sticky top-0 z-10 shadow-sm bg-slate-50 border-b border-borderColor">
+                        <tr class="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            <th class="px-4 py-4 w-10 text-center"><input type="checkbox" id="masterCheckbox" onclick="toggleSelectAll(this)" class="rounded border-slate-300 text-brandAccent focus:ring-brandAccent cursor-pointer w-4 h-4 transition"></th>
+                            <th class="px-4 py-4 cursor-pointer hover:text-slate-800 transition" onclick="sortTable('id')">ID Curier <i data-lucide="arrow-up-down" class="w-3 h-3 inline"></i></th>
+                            <th class="px-4 py-4 cursor-pointer hover:text-slate-800 transition" onclick="sortTable('name')">Courier Details <i data-lucide="arrow-up-down" class="w-3 h-3 inline"></i></th>
+                            <th class="px-4 py-4">City</th>
+                            <th class="px-4 py-4">Platform</th>
+                            <th class="px-4 py-4 text-center cursor-pointer hover:text-slate-800 transition" onclick="sortTable('status')">Status <i data-lucide="arrow-up-down" class="w-3 h-3 inline"></i></th>
+                            <th class="px-4 py-4 text-center">Manage</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100 text-sm text-slate-700">
+                        </tbody>
+                </table>
+            </div>
+            <div class="bg-slate-50 border-t border-borderColor p-4 flex justify-between items-center text-sm text-slate-500 font-semibold z-20 relative">
+                <span id="recordCount">0 couriers indexed</span>
+            </div>
         </section>
     </main>
 
-    <div id="toastContainer" class="fixed bottom-6 right-6 z-[100] flex flex-col gap-3"></div>
+    <div id="toastContainer" class="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none"></div>
 
-    <div id="formModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onclick="closeFormModal()"></div>
-        <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl modal-enter flex flex-col">
-            <div class="flex justify-between p-6 border-b"><h3 class="font-extrabold text-lg">Manage Courier</h3><button onclick="closeFormModal()"><i data-lucide="x" class="w-5 h-5"></i></button></div>
-            <div class="p-6 space-y-5">
-                <input type="hidden" id="form_index">
-                <div class="grid grid-cols-2 gap-5">
-                    <div><label class="block text-xs font-bold text-slate-500 mb-1">ID *</label><input type="text" id="form_id" class="w-full border rounded-lg p-2.5 text-sm bg-slate-50 focus:ring-2 focus:ring-brandAccent outline-none" required></div>
-                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Name *</label><input type="text" id="form_name" class="w-full border rounded-lg p-2.5 text-sm bg-slate-50 focus:ring-2 focus:ring-brandAccent outline-none" required></div>
-                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Phone</label><input type="text" id="form_phone" class="w-full border rounded-lg p-2.5 text-sm bg-slate-50 outline-none"></div>
-                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Platform</label><select id="form_platform" class="w-full border rounded-lg p-2.5 text-sm bg-slate-50 outline-none"><option>WOLT</option><option>GLOVO</option><option>BOLT</option><option>TAZZ</option></select></div>
-                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Status</label><select id="form_status" class="w-full border rounded-lg p-2.5 text-sm bg-slate-50 outline-none"><option>Active</option><option>Inactive</option></select></div>
-                </div>
+    <div id="formModal" class="fixed inset-0 z-50 hidden flex items-center justify-center pt-10 pb-10">
+        <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" onclick="closeFormModal()"></div>
+        <div class="relative w-full max-w-4xl bg-white border border-slate-200 rounded-2xl shadow-modal modal-enter overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center p-6 border-b border-slate-100 bg-white shrink-0">
+                <h3 class="text-lg font-extrabold text-slate-800 flex items-center gap-2" id="formModalTitle">
+                    <div class="bg-blue-50 p-1.5 rounded-lg"><i data-lucide="user-plus" class="w-5 h-5 text-brandAccent"></i></div>
+                    Manage Courier Record
+                </h3>
+                <button onclick="closeFormModal()" class="text-slate-400 hover:text-slate-800 transition bg-slate-50 hover:bg-slate-100 p-2 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
-            <div class="p-5 border-t bg-slate-50 flex gap-3">
-                <button onclick="closeFormModal()" class="flex-1 py-3 bg-white border rounded-xl font-bold hover:bg-slate-100 transition-colors">Cancel</button>
-                <button onclick="saveFormRecord()" class="flex-1 py-3 bg-brandAccent text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">Save Profile</button>
+            
+            <div class="p-6 overflow-y-auto space-y-6">
+                <input type="hidden" id="form_internal_index">
+                
+                <div id="form_error_box" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm">
+                    <i data-lucide="alert-triangle" class="w-5 h-5"></i> <span id="form_error_msg"></span>
+                </div>
+
+                <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-5 shadow-inner">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">ID Curier <span class="text-red-500">*</span></label>
+                        <input type="text" id="form_id" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm bg-white" required placeholder="e.g. 7280001">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Full Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="form_name" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm bg-white" required placeholder="e.g. John Doe">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Phone Number</label>
+                        <input type="text" id="form_phone" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm hover:bg-slate-50 transition-colors bg-white" placeholder="e.g. 4070000000">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Email Address</label>
+                        <input type="email" id="form_email" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm hover:bg-slate-50 transition-colors bg-white" placeholder="email@example.com">
+                    </div>
+                    <div class="relative">
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">City (Smart Search)</label>
+                        <div class="relative flex items-center">
+                            <input list="romanian-cities" id="form_city" class="premium-input w-full border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm hover:bg-slate-50 transition-colors bg-white cursor-pointer" placeholder="Start typing or select...">
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-3 pointer-events-none"></i>
+                        </div>
+                        <datalist id="romanian-cities">
+                            <option value="București"></option><option value="Cluj-Napoca"></option><option value="Timișoara"></option><option value="Iași"></option>
+                            <option value="Constanța"></option><option value="Craiova"></option><option value="Brașov"></option><option value="Galați"></option>
+                            <option value="Ploiești"></option><option value="Oradea"></option><option value="Brăila"></option><option value="Arad"></option>
+                            <option value="Pitești"></option><option value="Sibiu"></option><option value="Bacău"></option><option value="Târgu Mureș"></option>
+                            <option value="Baia Mare"></option><option value="Buzău"></option><option value="Botoșani"></option><option value="Satu Mare"></option>
+                            <option value="Râmnicu Vâlcea"></option><option value="Drobeta-Turnu Severin"></option><option value="Suceava"></option><option value="Piatra Neamț"></option>
+                            <option value="Târgu Jiu"></option><option value="Târgoviște"></option><option value="Focșani"></option><option value="Bistrița"></option>
+                            <option value="Tulcea"></option><option value="Reșița"></option><option value="Slatina"></option><option value="Călărași"></option>
+                            <option value="Alba Iulia"></option><option value="Giurgiu"></option><option value="Deva"></option><option value="Zalău"></option>
+                        </datalist>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">CNP (13 Digits)</label>
+                        <input type="text" id="form_cnp" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm hover:bg-slate-50 transition-colors bg-white" placeholder="1234567890123">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Full Home Address</label>
+                    <input type="text" id="form_address" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus text-slate-800 shadow-sm hover:bg-slate-50 transition-colors bg-white" placeholder="Full street address, Block, Ap.">
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Platform</label>
+                        <select id="form_platform" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus cursor-pointer text-slate-800 bg-white font-medium shadow-sm hover:bg-slate-50">
+                            <option value="WOLT">Wolt</option>
+                            <option value="GLOVO">Glovo</option>
+                            <option value="BOLT">Bolt</option>
+                            <option value="TAZZ">Tazz</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Contract Type</label>
+                        <select id="form_contract" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus cursor-pointer text-slate-800 bg-white shadow-sm hover:bg-slate-50">
+                            <option value="Full-time (8h)">Full-time (8h)</option>
+                            <option value="Part-time (4h)">Part-time (4h)</option>
+                            <option value="Part-time (2h)">Part-time (2h)</option>
+                            <option value="SRL / PFA">SRL / PFA</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Courier Role</label>
+                        <select id="form_role" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus cursor-pointer text-slate-800 bg-white shadow-sm hover:bg-slate-50">
+                            <option value="Regular Worker">Regular Worker</option>
+                            <option value="Student (Tax Exempt)">Student (Tax Exempt)</option>
+                            <option value="Foreign Worker (Visa)">Foreign Worker (Visa)</option>
+                            <option value="Pensioner">Pensioner</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Active Status</label>
+                        <select id="form_status" class="premium-input w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:border-brandAccent focus:outline-none focus:shadow-input-focus cursor-pointer text-slate-800 bg-white font-medium shadow-sm hover:bg-slate-50">
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Identity Document (Optional)</label>
+                    <input type="file" id="form_doc" accept="image/*,.pdf" class="w-full text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-brandAccent hover:file:bg-blue-100 transition-colors cursor-pointer focus:outline-none focus:shadow-input-focus">
+                </div>
+
+            </div>
+            
+            <div class="p-5 border-t border-slate-100 bg-slate-50 flex gap-3 shrink-0">
+                <button type="button" onclick="closeFormModal()" class="flex-1 px-4 py-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-bold transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300">Cancel</button>
+                <button type="button" onclick="saveFormRecord()" class="flex-1 px-4 py-3 bg-brandAccent hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">Save Profile</button>
             </div>
         </div>
     </div>
 
-    <script>
-        let fleetData = [];
-        let cloudSha = null;
-
-        // --- CLOUD SYNC INITIALIZATION ---
-        async function initApp() {
-            lucide.createIcons();
+    <div id="summaryModal" class="fixed inset-0 z-50 hidden flex items-center justify-center pt-10 pb-10">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onclick="closeSummary()"></div>
+        <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-modal modal-enter overflow-hidden flex flex-col border border-slate-200">
+            <div class="flex justify-between items-center p-5 bg-slate-50 border-b border-slate-200 shrink-0">
+                <h3 class="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="contact-2" class="w-4 h-4 text-slate-500"></i> Courier Profile
+                </h3>
+                <button onclick="closeSummary()" class="text-slate-400 hover:text-slate-800 transition"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
             
-            // Wait for parent window to pass the cloud credentials
-            if (!window.parent || !window.parent.cloudConfig || !window.parent.cloudConfig.token) {
-                showToast("Not authenticated. Please log in on the main screen.", "error");
+            <div class="p-6 bg-white" id="profileContent">
+                </div>
+            
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+                <button type="button" onclick="closeSummary()" class="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold transition shadow-sm">Close Profile</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteModal" class="fixed inset-0 z-50 hidden flex items-center justify-center pt-10 pb-10">
+        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onclick="closeDeleteModal()"></div>
+        <div class="relative w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-modal modal-enter overflow-hidden flex flex-col">
+            <div class="p-8 text-center space-y-4">
+                <div class="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3 border border-red-100 shadow-sm">
+                    <i data-lucide="alert-triangle" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-xl font-extrabold text-slate-900">Confirm Deletion</h3>
+                <p class="text-sm text-slate-500 font-medium leading-relaxed">You are about to permanently remove this courier record from the fleet database. This action cannot be undone.</p>
+            </div>
+            <div class="p-5 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button type="button" onclick="closeDeleteModal()" class="flex-1 px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-bold transition shadow-sm">Cancel</button>
+                <button type="button" onclick="executeDelete()" class="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition shadow-sm">Delete Record</button>
+            </div>
+        </div>
+    </div>
+    <script>
+    // --- STATE & ARCHITECTURE ---
+    let fleetData = [];
+    let cloudSha = null;
+    let recordToDelete = null;
+    let currentSort = { column: null, direction: 'asc' };
+
+    // --- CLOUD SYNC INITIALIZATION (From Script 1) ---
+    async function initApp() {
+        lucide.createIcons();
+        
+        // Wait for parent window to pass the cloud credentials
+        if (!window.parent || !window.parent.cloudConfig || !window.parent.cloudConfig.token) {
+            showToast("Not authenticated. Please log in on the main screen.", "error");
+            return;
+        }
+
+        const config = window.parent.cloudConfig;
+        
+        try {
+            const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
+                headers: { 'Authorization': `Bearer ${config.token}`, 'Accept': 'application/vnd.github.v3+json' }
+            });
+
+            if (response.status === 404) {
+                fleetData = []; 
+                await saveData(true); 
+                renderTable(); 
                 return;
             }
 
-            const config = window.parent.cloudConfig;
+            if (!response.ok) throw new Error("Failed to fetch cloud data.");
+
+            const data = await response.json();
+            cloudSha = data.sha;
             
-            try {
-                const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
-                    headers: { 'Authorization': `Bearer ${config.token}`, 'Accept': 'application/vnd.github.v3+json' }
-                });
+            // Decrypt data securely in browser
+            const encryptedContent = atob(data.content.replace(/\n/g, ''));
+            const bytes = window.parent.CryptoJS.AES.decrypt(encryptedContent, config.secretKey);
+            const decryptedString = bytes.toString(window.parent.CryptoJS.enc.Utf8);
 
-                if (response.status === 404) {
-                    fleetData = []; await saveData(true); renderTable(); return;
-                }
-
-                if (!response.ok) throw new Error("Failed to fetch cloud data.");
-
-                const data = await response.json();
-                cloudSha = data.sha;
-                
-                // Decrypt data securely in browser
-                const encryptedContent = atob(data.content.replace(/\n/g, ''));
-                const bytes = window.parent.CryptoJS.AES.decrypt(encryptedContent, config.secretKey);
-                const decryptedString = bytes.toString(window.parent.CryptoJS.enc.Utf8);
-
-                if (decryptedString) fleetData = JSON.parse(decryptedString);
-                renderTable();
-            } catch (error) {
-                console.error(error);
-                showToast("Failed to decrypt database.", "error");
+            if (decryptedString) {
+                fleetData = JSON.parse(decryptedString);
             }
+            renderTable();
+        } catch (error) {
+            console.error(error);
+            showToast("Failed to decrypt database.", "error");
         }
+    }
 
-        async function saveData(isInitial = false) {
-            if (!window.parent.cloudConfig) return;
-            const config = window.parent.cloudConfig;
+    async function saveData(isInitial = false) {
+        if (!window.parent.cloudConfig) return;
+        const config = window.parent.cloudConfig;
 
-            try {
-                const encryptedData = window.parent.CryptoJS.AES.encrypt(JSON.stringify(fleetData), config.secretKey).toString();
-                const payload = { message: "Sync: Courier Database Update", content: btoa(encryptedData) };
-                if (cloudSha) payload.sha = cloudSha;
+        try {
+            const encryptedData = window.parent.CryptoJS.AES.encrypt(JSON.stringify(fleetData), config.secretKey).toString();
+            const payload = { message: "Sync: Courier Database Update", content: btoa(encryptedData) };
+            if (cloudSha) payload.sha = cloudSha;
 
-                const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) throw new Error("Sync Failed");
-                const result = await response.json();
-                cloudSha = result.content.sha;
-                
-                if (!isInitial) showToast("Database synced to GitHub.", "success");
-            } catch (error) {
-                showToast("Cloud sync failed.", "error");
-            }
-        }
-
-        function showToast(msg, type='success') {
-            const cont = document.getElementById('toastContainer');
-            const color = type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200';
-            cont.innerHTML += `<div class="toast-enter ${color} px-5 py-3 border rounded-xl font-bold shadow-lg mb-2">${msg}</div>`;
-            setTimeout(() => { cont.firstChild.remove(); }, 3000);
-        }
-
-        function openFormModal(index = null) {
-            document.getElementById('form_index').value = index !== null ? index : '';
-            if (index !== null) {
-                const e = fleetData[index];
-                document.getElementById('form_id').value = e.id; document.getElementById('form_name').value = e.name;
-                document.getElementById('form_phone').value = e.phone || ''; document.getElementById('form_platform').value = e.platform;
-                document.getElementById('form_status').value = e.status;
-            } else {
-                ['form_id','form_name','form_phone'].forEach(id => document.getElementById(id).value = '');
-            }
-            document.getElementById('formModal').classList.remove('hidden');
-        }
-
-        function closeFormModal() { document.getElementById('formModal').classList.add('hidden'); }
-
-        function saveFormRecord() {
-            const idx = document.getElementById('form_index').value;
-            const payload = {
-                id: document.getElementById('form_id').value.trim(), name: document.getElementById('form_name').value.trim(),
-                phone: document.getElementById('form_phone').value, platform: document.getElementById('form_platform').value,
-                status: document.getElementById('form_status').value
-            };
-            if(!payload.id || !payload.name) return showToast("ID and Name are required.", "error");
-            
-            if (idx !== '') fleetData[idx] = payload;
-            else fleetData.unshift(payload);
-            
-            saveData(); closeFormModal(); renderTable();
-        }
-
-        function deleteRecord(idx) {
-            if(confirm("Permanently delete this courier?")) {
-                fleetData.splice(idx, 1);
-                saveData(); renderTable();
-                showToast("Record deleted.", "success");
-            }
-        }
-
-        function renderTable() {
-            const tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
-            let act = 0, inact = 0;
-            
-            fleetData.forEach((e, i) => {
-                if(e.status === 'Active') act++; else inact++;
-                const sBadge = e.status === 'Active' ? '<span class="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md text-[10px] font-bold border border-emerald-200">ACTIVE</span>' : '<span class="bg-red-50 text-red-600 px-2.5 py-1 rounded-md text-[10px] font-bold border border-red-200">INACTIVE</span>';
-                
-                tbody.innerHTML += `
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="px-4 py-4 font-bold text-slate-500">${e.id}</td>
-                        <td class="px-4 py-4">
-                            <div class="flex flex-col"><span class="font-extrabold text-slate-800">${e.name}</span><span class="text-xs text-slate-400 font-bold">${e.phone || 'No phone'}</span></div>
-                        </td>
-                        <td class="px-4 py-4 font-bold text-slate-500">${e.platform}</td>
-                        <td class="px-4 py-4 text-center">${sBadge}</td>
-                        <td class="px-4 py-4 text-center flex justify-center gap-2">
-                            <button onclick="openFormModal(${i})" class="text-slate-400 hover:text-brandAccent bg-slate-50 p-2 rounded-lg hover:bg-blue-50 transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                            <button onclick="deleteRecord(${i})" class="text-slate-400 hover:text-negRed bg-slate-50 p-2 rounded-lg hover:bg-red-50 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        </td>
-                    </tr>`;
+            const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
 
-            document.getElementById('kpi_total').innerText = fleetData.length;
-            document.getElementById('kpi_active').innerText = act;
-            document.getElementById('kpi_inactive').innerText = inact;
-            lucide.createIcons();
+            if (!response.ok) throw new Error("Sync Failed");
+            const result = await response.json();
+            cloudSha = result.content.sha;
+            
+            if (!isInitial) showToast("Database synced to GitHub.", "success");
+        } catch (error) {
+            showToast("Cloud sync failed.", "error");
+        }
+    }
+
+    // --- TOAST NOTIFICATIONS (Rich UI from Script 2) ---
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        
+        const isSuccess = type === 'success';
+        const icon = isSuccess ? 'check-circle' : 'alert-circle';
+        const bgClass = isSuccess ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800';
+        const iconColor = isSuccess ? 'text-emerald-500' : 'text-red-500';
+
+        toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-modal pointer-events-auto toast-enter ${bgClass} mb-2`;
+        toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 ${iconColor}"></i><span class="font-bold text-sm tracking-wide">${message}</span>`;
+        
+        container.appendChild(toast);
+        lucide.createIcons();
+
+        setTimeout(() => {
+            toast.classList.replace('toast-enter', 'toast-exit');
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+
+    // --- FORM ENGINE ---
+    function openFormModal(index = null) {
+        const errBox = document.getElementById('form_error_box');
+        errBox.classList.add('hidden');
+
+        if (index !== null) {
+            document.getElementById('formModalTitle').innerHTML = '<div class="bg-amber-50 p-1.5 rounded-lg"><i data-lucide="edit-3" class="w-5 h-5 text-amber-600"></i></div> Edit Courier Record';
+            const e = fleetData[index];
+            
+            document.getElementById('form_internal_index').value = index;
+            document.getElementById('form_id').value = e.id;
+            document.getElementById('form_name').value = e.name;
+            document.getElementById('form_phone').value = e.phone;
+            document.getElementById('form_email').value = e.email;
+            document.getElementById('form_city').value = e.city;
+            document.getElementById('form_cnp').value = e.cnp;
+            document.getElementById('form_address').value = e.address;
+            document.getElementById('form_platform').value = e.platform;
+            document.getElementById('form_contract').value = e.contract || 'Full-time (8h)';
+            document.getElementById('form_role').value = e.role || 'Regular Worker';
+            document.getElementById('form_status').value = e.status;
+            document.getElementById('form_doc').value = '';
+        } else {
+            document.getElementById('formModalTitle').innerHTML = '<div class="bg-blue-50 p-1.5 rounded-lg"><i data-lucide="user-plus" class="w-5 h-5 text-brandAccent"></i></div> Onboard Courier';
+            
+            document.getElementById('form_internal_index').value = '';
+            document.getElementById('form_id').value = '';
+            document.getElementById('form_name').value = '';
+            document.getElementById('form_phone').value = '';
+            document.getElementById('form_email').value = '';
+            document.getElementById('form_city').value = '';
+            document.getElementById('form_cnp').value = '';
+            document.getElementById('form_address').value = '';
+            document.getElementById('form_platform').value = 'WOLT';
+            document.getElementById('form_contract').value = 'Full-time (8h)';
+            document.getElementById('form_role').value = 'Regular Worker';
+            document.getElementById('form_status').value = 'Active';
+            document.getElementById('form_doc').value = '';
+        }
+        
+        document.getElementById('formModal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function closeFormModal() { document.getElementById('formModal').classList.add('hidden'); }
+
+    function saveFormRecord() {
+        const index = document.getElementById('form_internal_index').value;
+        const newId = document.getElementById('form_id').value.trim();
+        const newName = document.getElementById('form_name').value.trim();
+        const fileInput = document.getElementById('form_doc');
+        const fileName = fileInput.files.length > 0 ? fileInput.files[0].name : '';
+
+        const errBox = document.getElementById('form_error_box');
+        const errMsg = document.getElementById('form_error_msg');
+
+        if (!newId || !newName) {
+            errBox.classList.remove('hidden');
+            errMsg.innerText = "Please fill in ID and Full Name.";
+            return;
         }
 
-        document.addEventListener('DOMContentLoaded', initApp);
-    </script>
+        // Duplicate Name Check
+        const isDuplicate = fleetData.some((emp, i) => {
+            if (index !== '' && i == index) return false;
+            return emp.name.toLowerCase() === newName.toLowerCase();
+        });
+
+        if (isDuplicate) {
+            errBox.classList.remove('hidden');
+            errMsg.innerText = `An employee named "${newName}" already exists in the fleet.`;
+            return;
+        }
+
+        const payload = {
+            id: newId,
+            name: newName,
+            phone: document.getElementById('form_phone').value,
+            email: document.getElementById('form_email').value,
+            city: document.getElementById('form_city').value || 'Unspecified',
+            cnp: document.getElementById('form_cnp').value,
+            address: document.getElementById('form_address').value,
+            platform: document.getElementById('form_platform').value,
+            contract: document.getElementById('form_contract').value,
+            role: document.getElementById('form_role').value,
+            status: document.getElementById('form_status').value,
+        };
+
+        if (index !== '') {
+            payload.docName = fileName ? fileName : fleetData[index].docName;
+            fleetData[index] = payload;
+            showToast("Courier profile updated successfully.", "success");
+        } else {
+            payload.docName = fileName;
+            fleetData.unshift(payload);
+            showToast("New courier onboarded successfully.", "success");
+        }
+
+        saveData(); 
+        closeFormModal(); 
+        renderTable();
+    }
+
+    // --- PROFILE VIEW ---
+    function openSummary(index) {
+        const emp = fleetData[index];
+        const content = document.getElementById('profileContent');
+        const initial = emp.name.charAt(0).toUpperCase();
+
+        let platColor = 'bg-slate-100 text-slate-700';
+        if(emp.platform === 'WOLT') platColor = 'bg-blue-50 text-wolt border-blue-100';
+        if(emp.platform === 'GLOVO') platColor = 'bg-amber-50 text-glovo border-amber-100';
+        if(emp.platform === 'BOLT') platColor = 'bg-emerald-50 text-bolt border-emerald-100';
+        if(emp.platform === 'TAZZ') platColor = 'bg-orange-50 text-tazz border-orange-100';
+
+        let statColor = emp.status === 'Active' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200';
+
+        content.innerHTML = `
+            <div class="flex items-center gap-5 mb-6 pb-6 border-b border-slate-100">
+                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-brandAccent to-blue-400 text-white flex items-center justify-center text-2xl font-extrabold shadow-md">${initial}</div>
+                <div>
+                    <h2 class="text-2xl font-extrabold text-slate-800">${emp.name}</h2>
+                    <div class="flex items-center gap-3 mt-1.5">
+                        <span class="text-sm font-bold text-slate-500">ID: ${emp.id}</span>
+                        <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-widest border ${platColor}">${emp.platform}</span>
+                        <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-widest border ${statColor}">${emp.status}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-y-5 gap-x-8">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Phone Number</p>
+                    <p class="text-sm font-bold text-slate-800">${emp.phone || 'N/A'}</p>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Email Address</p>
+                    <p class="text-sm font-bold text-slate-800">${emp.email || 'N/A'}</p>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">City / Region</p>
+                    <p class="text-sm font-bold text-slate-800">${emp.city || 'N/A'}</p>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">CNP Number</p>
+                    <p class="text-sm font-bold text-slate-800 font-mono">${emp.cnp || 'N/A'}</p>
+                </div>
+                <div class="col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Full Home Address</p>
+                    <p class="text-sm font-bold text-slate-800 leading-relaxed">${emp.address || 'N/A'}</p>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Contract Status</p>
+                    <p class="text-sm font-bold text-slate-800">${emp.contract}</p>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Courier Role</p>
+                    <p class="text-sm font-bold text-slate-800">${emp.role}</p>
+                </div>
+                <div class="col-span-2">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Identity Document</p>
+                    <p class="text-sm font-bold ${emp.docName ? 'text-brandAccent' : 'text-slate-500'} flex items-center gap-2">
+                        <i data-lucide="file-check-2" class="w-4 h-4"></i> ${emp.docName || 'No document uploaded'}
+                    </p>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('summaryModal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function closeSummary() { document.getElementById('summaryModal').classList.add('hidden'); }
+
+    // --- DELETE ENGINE ---
+    function confirmDelete(index) {
+        recordToDelete = index;
+        document.getElementById('deleteModal').classList.remove('hidden');
+    }
+
+    function closeDeleteModal() {
+        recordToDelete = null;
+        document.getElementById('deleteModal').classList.add('hidden');
+    }
+
+    function executeDelete() {
+        if(recordToDelete !== null) {
+            fleetData.splice(recordToDelete, 1);
+            showToast("Courier permanently deleted from database.", "success");
+            saveData();
+            renderTable();
+        }
+        closeDeleteModal();
+    }
+
+    // --- EXCEL IMPORT / EXPORT (Using SheetJS) ---
+    function processExcelImport(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const importedData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            
+            let added = 0, skipped = 0;
+            importedData.forEach(row => {
+                const empName = row.Name || row.name || row.NAME || '';
+                if (!empName) return;
+
+                if (fleetData.some(emp => emp.name.toLowerCase() === empName.toLowerCase())) {
+                    skipped++;
+                } else {
+                    fleetData.unshift({
+                        id: row.ID || row.id || row.CourierID || Math.floor(Math.random() * 100000).toString(),
+                        name: empName, city: row.City || row.city || 'Unspecified',
+                        phone: row.Phone || row.phone || '', email: row.Email || row.email || '',
+                        platform: (row.Platform || row.platform || 'WOLT').toUpperCase(), 
+                        status: row.Status || row.status || 'Active',
+                        address: row.Address || row.address || '', cnp: row.CNP || row.cnp || '',
+                        contract: row.Contract || row.contract || 'Full-time (8h)', role: row.Role || row.role || 'Regular Worker', docName: ''
+                    });
+                    added++;
+                }
+            });
+
+            saveData();
+            renderTable();
+            showToast(`Import Success: ${added} added, ${skipped} duplicates skipped.`);
+        };
+        reader.readAsArrayBuffer(file);
+        event.target.value = ''; 
+    }
+
+    function executeExcelExport() {
+        if(fleetData.length === 0) return showToast("No data to export.", 'error');
+        
+        const exportData = fleetData.map(emp => ({
+            "ID Curier": emp.id, "Nume": emp.name, "City": emp.city, "Phone": emp.phone, "Email": emp.email,
+            "Platform": emp.platform, "Status": emp.status, "CNP": emp.cnp, "Address": emp.address,
+            "Contract": emp.contract, "Role": emp.role
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Fleet_Database");
+        XLSX.writeFile(wb, "Buraq_Fleet_Database.xlsx");
+        showToast("Database exported successfully.", "success");
+    }
+
+    // --- UI & RENDERING ---
+    function clearFilters() {
+        document.getElementById('filter_platform').value = 'ALL';
+        document.getElementById('filter_status').value = 'ALL';
+        document.getElementById('filter_search').value = '';
+        renderTable();
+    }
+
+    function toggleSelectAll(source) {
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = source.checked);
+    }
+
+    function updateBulkStatus(newStatus) {
+        const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+        if (checkboxes.length === 0) { showToast("Select records using checkboxes first.", 'error'); return; }
+        
+        checkboxes.forEach(cb => {
+            fleetData[cb.value].status = newStatus;
+        });
+        
+        saveData();
+        renderTable();
+        showToast(`Updated status to ${newStatus} for ${checkboxes.length} couriers.`);
+    }
+
+    function sortTable(column) {
+        if (currentSort.column === column) {
+            currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort.column = column;
+            currentSort.direction = 'asc';
+        }
+
+        fleetData.sort((a, b) => {
+            let valA = a[column].toLowerCase();
+            let valB = b[column].toLowerCase();
+            
+            if (!isNaN(valA) && !isNaN(valB)) { valA = Number(valA); valB = Number(valB); }
+            if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        renderTable();
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        
+        // Safety check if the element exists before modifying
+        const masterCheckbox = document.getElementById('masterCheckbox');
+        if (masterCheckbox) masterCheckbox.checked = false;
+
+        const fPlat = document.getElementById('filter_platform').value;
+        const fStat = document.getElementById('filter_status').value;
+        const fSearch = (document.getElementById('filter_search').value || '').toLowerCase().trim();
+
+        let activeCount = 0; let inactiveCount = 0;
+
+        const filteredData = fleetData.filter((entry, index) => {
+            // Keep track of original index for editing
+            entry.originalIndex = index;
+            
+            const passPlat = fPlat === 'ALL' ? true : entry.platform === fPlat;
+            const passStat = fStat === 'ALL' ? true : entry.status === fStat;
+            const matchSearch = `${entry.name} ${entry.id} ${entry.phone} ${entry.city}`.toLowerCase().includes(fSearch);
+
+            if (entry.status === 'Active') activeCount++; else inactiveCount++;
+
+            return passPlat && passStat && matchSearch;
+        });
+
+        document.getElementById('kpi_total').innerText = fleetData.length;
+        document.getElementById('kpi_active').innerText = activeCount;
+        document.getElementById('kpi_inactive').innerText = inactiveCount;
+
+        if (filteredData.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-slate-400 bg-white text-sm font-bold tracking-wide">NO COURIERS MATCH YOUR FILTERS</td></tr>`;
+        }
+
+        filteredData.forEach((entry) => {
+            let platClass = "bg-slate-100 text-slate-600 border border-slate-200";
+            if(entry.platform === 'WOLT') platClass = "bg-blue-50 text-wolt border border-blue-100";
+            if(entry.platform === 'GLOVO') platClass = "bg-amber-50 text-glovo border border-amber-100";
+            if(entry.platform === 'BOLT') platClass = "bg-emerald-50 text-bolt border border-emerald-100";
+            if(entry.platform === 'TAZZ') platClass = "bg-orange-50 text-tazz border border-orange-100";
+
+            const statusBadge = entry.status === 'Active'
+                ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm"><i data-lucide="check" class="w-3 h-3"></i> Active</span>`
+                : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-red-50 text-red-600 border border-red-200 shadow-sm"><i data-lucide="ban" class="w-3 h-3"></i> Inactive</span>`;
+
+            tbody.innerHTML += `
+                <tr class="hover:bg-slate-50 bg-white transition-colors group">
+                    <td class="px-4 py-4 text-center border-b border-slate-100"><input type="checkbox" value="${entry.originalIndex}" class="row-checkbox rounded border-slate-400 text-brandAccent focus:ring-brandAccent cursor-pointer w-4 h-4 transition"></td>
+                    <td class="px-4 py-4 border-b border-slate-100 text-slate-500 font-extrabold tracking-wide">${entry.id}</td>
+                    <td class="px-4 py-4 border-b border-slate-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-brandAccent/10 text-brandAccent flex items-center justify-center font-bold text-xs">${entry.name.charAt(0).toUpperCase()}</div>
+                            <div>
+                                <button onclick="openSummary(${entry.originalIndex})" class="font-extrabold text-slate-800 hover:text-brandAccent hover:underline transition-all text-left block">${entry.name}</button>
+                                <span class="text-[11px] font-bold text-slate-400 tracking-wide">${entry.phone || entry.email || 'No Contact Data'}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-4 py-4 border-b border-slate-100 text-slate-700 font-bold">${entry.city}</td>
+                    <td class="px-4 py-4 border-b border-slate-100"><span class="px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-widest ${platClass}">${entry.platform}</span></td>
+                    <td class="px-4 py-4 border-b border-slate-100 text-center">${statusBadge}</td>
+                    <td class="px-4 py-4 border-b border-slate-100 text-center flex justify-center gap-2.5">
+                        <button onclick="openFormModal(${entry.originalIndex})" class="text-slate-400 hover:text-amber-600 transition-colors p-1.5 rounded-md hover:bg-amber-50" title="Edit Profile"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                        <button onclick="confirmDelete(${entry.originalIndex})" class="text-slate-400 hover:text-negRed transition-colors p-1.5 rounded-md hover:bg-red-50" title="Delete Profile"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.getElementById('recordCount').innerText = `${filteredData.length} couriers matching filters`;
+        lucide.createIcons();
+    }
+
+    // Initialize App on Load
+    document.addEventListener('DOMContentLoaded', initApp);
+</script>
 </body>
 </html>
