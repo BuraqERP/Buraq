@@ -651,37 +651,15 @@
 
             // STRICT FIX: Do not auto-create on 404 anymore. Force the file to exist.
             if (response.status === 404) {
-                throw new Error("Financial database file not found on GitHub. Check repository path.");
-            }
-
-            if (!response.ok) throw new Error("Invalid GitHub Token or Repository not found.");
-
-            const data = await response.json();
-            window.cloudConfig.fileSha = data.sha;
-            
-            // Decode Base64
-            const encryptedContent = atob(data.content.replace(/\n/g, ''));
-            
-            // Decrypt via AES
-            const bytes = CryptoJS.AES.decrypt(encryptedContent, pass);
-            const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
-
-            // STRICT PASSWORD CHECK: Fails if the string is empty
-            if (!decryptedString) throw new Error("Incorrect Master Encryption Password.");
-
-            // STRICT PASSWORD CHECK: Fails if the decrypted garbage is not valid JSON
-            try {
-                fleetData = JSON.parse(decryptedString);
-            } catch(e) {
-                throw new Error("Incorrect Master Encryption Password.");
-            }
-
-            // Success! Store credentials globally for the Iframe to use
-            window.cloudConfig.token = token;
-            window.cloudConfig.secretKey = pass;
-            
-            renderTable();
-            unlockUI();
+    // --- FIRST TIME SETUP BYPASS ---
+    fleetData = [];
+    window.cloudConfig.token = token;
+    window.cloudConfig.secretKey = pass; // Whatever you just typed becomes the forever password!
+    await saveData(true); 
+    renderTable();
+    unlockUI();
+    return;
+}
 
         } catch (error) {
             errBox.classList.remove('hidden');
