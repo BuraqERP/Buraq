@@ -590,9 +590,9 @@
                     </div>
                     <span class="font-extrabold tracking-wide uppercase text-sm text-slate-100">Buraq Workspace</span>
                 </div>
-                <button onclick="closeSecondApp()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-md flex items-center gap-2 border border-slate-600 hover:border-slate-500">
-                    <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Fund Manager
-                </button>
+                <button onclick="window.parent.closeSecondApp()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-md flex items-center gap-2 border border-slate-600 hover:border-slate-500">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Fund Manager
+</button>
             </div>
             <iframe id="app-iframe" class="w-full h-full border-0 bg-appBg flex-1"></iframe>
         </div>
@@ -1242,17 +1242,7 @@
         }
     }
     
-    function closeSecondApp() {
-        const overlay = document.getElementById('app-overlay');
-        if (overlay) {
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                overlay.classList.remove('flex');
-            }, 300);
-        }
-    }
+   
 
     // Initialize App on Load
     document.addEventListener('DOMContentLoaded', initApp);
