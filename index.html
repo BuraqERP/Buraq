@@ -650,16 +650,16 @@
             });
 
             // STRICT FIX: Do not auto-create on 404 anymore. Force the file to exist.
-            if (response.status === 404) {
-    // --- FIRST TIME SETUP BYPASS ---
-    fleetData = [];
-    window.cloudConfig.token = token;
-    window.cloudConfig.secretKey = pass; // Whatever you just typed becomes the forever password!
-    await saveData(true); 
-    renderTable();
-    unlockUI();
-    return;
-}
+        if (response.status === 404) {
+                // --- FIRST TIME SETUP BYPASS ---
+                fleetData = [];
+                window.cloudConfig.token = token;
+                window.cloudConfig.secretKey = pass; // Whatever you typed is now your permanent password!
+                await saveData(true); 
+                renderTable();
+                unlockUI();
+                return;
+            }
 
         } catch (error) {
             errBox.classList.remove('hidden');
