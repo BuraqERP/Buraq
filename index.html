@@ -597,439 +597,535 @@
             <iframe id="app-iframe" class="w-full h-full border-0 bg-appBg flex-1"></iframe>
         </div>
 
-        <script>
-            // --- GITHUB CLOUD DATABASE STATE ---
-            let fleetData = [];
-            let recordToDelete = null;
-            
-            // GitHub Backend Configuration Context
-            let cloudConfig = {
-                owner: 'BuraqERP',
-                repo: 'Buraq',
-                path: 'database.enc',
-                token: null,     // Injected via Login Screen
-                secretKey: null, // Injected via Login Screen
-                fileSha: null    // Used by GitHub API to track versions
-            };
+       <script>
+    // --- GITHUB CLOUD DATABASE STATE ---
+    let fleetData = [];
+    let recordToDelete = null;
+    let currentSort = { column: null, direction: 'asc' };
+    
+    // Cloud Configuration Context
+    let cloudConfig = {
+        owner: 'BuraqERP',
+        repo: 'Buraq',
+        path: 'financial_db.enc', // Standardized path for the financial database
+        token: null,
+        secretKey: null,
+        fileSha: null 
+    };
 
-            // Replaces Local Storage with Cloud Preparation Setup
-            function showToast(message, type = 'success') {
-                const container = document.getElementById('toastContainer');
-                const toast = document.createElement('div');
-                
-                const isSuccess = type === 'success';
-                const icon = isSuccess ? 'check-circle' : 'alert-circle';
-                const bgClass = isSuccess ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800';
-                const iconColor = isSuccess ? 'text-emerald-500' : 'text-red-500';
+    // --- CLOUD SYNC INITIALIZATION ---
+    async function initApp() {
+        lucide.createIcons();
+        
+        // Fetch context from the main parent window
+        if (window.parent && window.parent.cloudConfig && window.parent.cloudConfig.token) {
+            cloudConfig.token = window.parent.cloudConfig.token;
+            cloudConfig.secretKey = window.parent.cloudConfig.secretKey;
+            cloudConfig.owner = window.parent.cloudConfig.owner || cloudConfig.owner;
+            cloudConfig.repo = window.parent.cloudConfig.repo || cloudConfig.repo;
+        } else {
+            showToast("Cloud connection error. Please refresh and log in on main screen.", "error");
+            return;
+        }
+        
+        try {
+            // Fetch financial database from GitHub
+            const response = await fetch(`https://api.github.com/repos/${cloudConfig.owner}/${cloudConfig.repo}/contents/${cloudConfig.path}`, {
+                headers: {
+                    'Authorization': `Bearer ${cloudConfig.token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
 
-                toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-modal pointer-events-auto toast-enter ${bgClass}`;
-                toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 ${iconColor}"></i><span class="font-bold text-sm tracking-wide">${message}</span>`;
-                
-                container.appendChild(toast);
-                lucide.createIcons();
-
-                setTimeout(() => {
-                    toast.classList.replace('toast-enter', 'toast-exit');
-                    setTimeout(() => toast.remove(), 300);
-                }, 4000);
-            }
-
-            function isDuplicate(id, start, end, platform, excludeInternalId = null) {
-                return fleetData.some(entry => 
-                    entry.id.toString().trim() === id.toString().trim() &&
-                    entry.startDate === start &&
-                    entry.endDate === end &&
-                    entry.platform === platform &&
-                    (excludeInternalId ? entry._internalId !== excludeInternalId : true)
-                );
-            }
-
-            function formatDisplayDate(start, end) {
-                if (!start && !end) return 'N/A';
-                if (start && !end) return start;
-                if (!start && end) return end;
-                try {
-                    const s = new Date(start); const e = new Date(end);
-                    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                    const sDay = String(s.getDate()).padStart(2, '0'); const sMon = months[s.getMonth()].toUpperCase();
-                    const eDay = String(e.getDate()).padStart(2, '0'); const eMon = months[e.getMonth()].toUpperCase();
-                    return sMon === eMon ? `${sDay}-${eDay} ${sMon}` : `${sDay} ${sMon} - ${eDay} ${eMon}`;
-                } catch(e) { return `${start} to ${end}`; }
-            }
-
-            // Pure Math Engine
-            const parseNum = (val) => {
-                if (!val) return 0;
-                const cleaned = val.toString().replace(/[^\d.-]/g, '');
-                return parseFloat(cleaned) || 0;
-            };
-
-            function calculateFormulas(entry) {
-                const venituri = entry.comenzi + entry.bonusNum + entry.alteBonus;
-                const castigNet = venituri - (venituri * entry.comisioPct);
-                
-                // Deductions are stored as positive absolute numbers and subtracted
-                const totalVenit = castigNet + entry.bacsis - entry.compensare - entry.taxa;
-                const net = castigNet + entry.bacsis - entry.taxa;
-                
-                // MOVED UP: Calculate totalEarn BEFORE calculating bcom6Val
-                const totalEarn = venituri + entry.bacsis;
-                
-                // THE BUG FIX: Deriving bcom6Val from totalEarn, not net
-                const bcom6Val = totalEarn * 0.06;
-                
-                // NEW SALARY LOGIC: Matches "Total Paid" from the summary precisely
-                const stdComm = totalEarn * 0.10;
-                const salary = totalEarn - stdComm - Math.abs(entry.taxa) - Math.abs(entry.contract) - Math.abs(entry.compensare);
-
-                return { venituri, castigNet, totalVenit, net, bcom6Val, salary, totalEarn, stdComm };
-            }
-
-            // --- PASTE ENGINE ---
-            function processPaste() {
-                const rawText = document.getElementById('pasteArea').value.trim();
-                const pStart = document.getElementById('paste_start').value;
-                const pEnd = document.getElementById('paste_end').value;
-                const pPlatform = document.getElementById('paste_platform').value;
-                
-                if (!pStart || !pEnd) { showToast("Cycle Start and End dates are required.", 'error'); return; }
-                if (!rawText) return;
-
-                const rows = rawText.split('\n');
-                let addedCount = 0;
-                let skippedCount = 0;
-
-                rows.forEach(row => {
-                    const cols = row.split('\t');
-                    if (cols.length < 2) return;
-                    
-                    // Auto-detect empty first column (Excel copy formatting)
-                    let offset = 0;
-                    if (!cols[0] && cols[1] && !isNaN(parseFloat(cols[3]))) {
-                        offset = 1;
-                    }
-
-                    const cId = cols[0 + offset] ? cols[0 + offset].trim() : '';
-                    if(!cId) return;
-                    
-                    if (isDuplicate(cId, pStart, pEnd, pPlatform)) {
-                        skippedCount++;
-                        return; 
-                    }
-
-                    let cp = parseNum(cols[6 + offset]); if (cp === 0) cp = 4;
-
-                    fleetData.unshift({
-                        _internalId: Date.now() + Math.random().toString(),
-                        startDate: pStart, endDate: pEnd, platform: pPlatform, isPaid: false,
-                        id: cId, nume: cols[1 + offset] ? cols[1 + offset].trim() : '',
-                        comenzi: parseNum(cols[2 + offset]), bonusNum: parseNum(cols[3 + offset]), alteBonus: parseNum(cols[4 + offset]),
-                        comisioPct: cp / 100, bacsis: parseNum(cols[8 + offset]),
-                        compensare: Math.abs(parseNum(cols[9 + offset])), 
-                        taxa: Math.abs(parseNum(cols[10 + offset])), 
-                        contract: Math.abs(parseNum(cols[11 + offset]))
-                    });
-                    addedCount++;
-                });
-
-                document.getElementById('pasteArea').value = '';
-                togglePasteModal(false);
-                
-                saveData(); // Save to Cloud (API function hooked in Part 2)
+            if (response.status === 404) {
+                // First time creation of financial DB
+                fleetData = [];
+                await saveData(true); 
                 renderTable();
-
-                if (addedCount > 0 && skippedCount === 0) showToast(`Successfully imported ${addedCount} records.`, 'success');
-                else if (addedCount > 0 && skippedCount > 0) showToast(`Imported ${addedCount} records. Skipped ${skippedCount} duplicates.`, 'success');
-                else if (addedCount === 0 && skippedCount > 0) showToast(`No new records added. Skipped ${skippedCount} duplicates.`, 'error');
+                return;
             }
-// --- FORM ENGINE ---
-        function openFormModal(internalId = null) {
-            const errBox = document.getElementById('form_error_box');
-            errBox.classList.add('hidden');
 
-            if (internalId) {
-                document.getElementById('formModalTitle').innerHTML = '<div class="bg-amber-50 p-1.5 rounded-lg"><i data-lucide="edit-3" class="w-5 h-5 text-amber-600"></i></div> Edit Courier Record';
-                const e = fleetData.find(x => x._internalId === internalId);
-                document.getElementById('form_internal_id').value = e._internalId;
-                document.getElementById('form_platform').value = e.platform;
-                document.getElementById('form_start').value = e.startDate;
-                document.getElementById('form_end').value = e.endDate;
-                document.getElementById('form_id').value = e.id;
-                document.getElementById('form_nume').value = e.nume;
-                document.getElementById('form_comisio').value = (e.comisioPct * 100).toFixed(2);
-                document.getElementById('form_comenzi').value = e.comenzi;
-                document.getElementById('form_bonus').value = e.bonusNum;
-                document.getElementById('form_alte').value = e.alteBonus;
-                document.getElementById('form_bacsis').value = e.bacsis;
-                document.getElementById('form_compensare').value = e.compensare;
-                document.getElementById('form_taxa').value = e.taxa;
-                document.getElementById('form_contract').value = e.contract;
-                document.getElementById('form_status').value = e.isPaid ? "true" : "false";
-            } else {
-                document.getElementById('formModalTitle').innerHTML = '<div class="bg-blue-50 p-1.5 rounded-lg"><i data-lucide="file-plus" class="w-5 h-5 text-brandAccent"></i></div> Create Courier Record';
-                document.getElementById('form_internal_id').value = '';
-                document.getElementById('form_platform').value = 'WOLT';
-                document.getElementById('form_start').value = '';
-                document.getElementById('form_end').value = '';
-                document.getElementById('form_id').value = '';
-                document.getElementById('form_nume').value = '';
-                document.getElementById('form_comisio').value = '';
-                document.getElementById('form_comenzi').value = '';
-                document.getElementById('form_bonus').value = '';
-                document.getElementById('form_alte').value = '';
-                document.getElementById('form_bacsis').value = '';
-                document.getElementById('form_compensare').value = '';
-                document.getElementById('form_taxa').value = '';
-                document.getElementById('form_contract').value = '';
-                document.getElementById('form_status').value = "false";
-            }
+            if (!response.ok) throw new Error("Failed to fetch cloud database.");
+
+            const data = await response.json();
+            cloudConfig.fileSha = data.sha;
             
-            document.getElementById('formModal').classList.remove('hidden');
-            lucide.createIcons();
-        }
+            // Decrypt using CryptoJS
+            const encryptedContent = atob(data.content.replace(/\n/g, ''));
+            const bytes = (window.parent && window.parent.CryptoJS) 
+                            ? window.parent.CryptoJS.AES.decrypt(encryptedContent, cloudConfig.secretKey)
+                            : CryptoJS.AES.decrypt(encryptedContent, cloudConfig.secretKey);
+                            
+            const decryptedString = bytes.toString((window.parent && window.parent.CryptoJS) ? window.parent.CryptoJS.enc.Utf8 : CryptoJS.enc.Utf8);
 
-        function closeFormModal() { 
-            document.getElementById('formModal').classList.add('hidden'); 
-        }
-
-        function saveFormRecord() {
-            const internalId = document.getElementById('form_internal_id').value;
-            const plat = document.getElementById('form_platform').value;
-            const start = document.getElementById('form_start').value;
-            const end = document.getElementById('form_end').value;
-            const id = document.getElementById('form_id').value;
-            const nume = document.getElementById('form_nume').value;
-
-            const errBox = document.getElementById('form_error_box');
-            const errMsg = document.getElementById('form_error_msg');
-
-            if (!start || !end || !id || !nume) {
-                errBox.classList.remove('hidden');
-                errMsg.innerText = "Please fill in all required fields (*).";
-                return;
+            if (decryptedString) {
+                fleetData = JSON.parse(decryptedString);
             }
+            renderTable();
+        } catch (error) {
+            console.error(error);
+            showToast("Error decrypting database. Invalid password or corrupted file.", "error");
+        }
+    }
 
-            if (isDuplicate(id, start, end, plat, internalId)) {
-                errBox.classList.remove('hidden');
-                errMsg.innerText = `A record for ID ${id} already exists for ${plat} in this cycle.`;
-                return;
-            }
+    async function saveData(isInitial = false) {
+        if (!cloudConfig.token || !cloudConfig.secretKey) return;
+
+        try {
+            // Encrypt Data
+            const jsonString = JSON.stringify(fleetData);
+            const encryptedData = (window.parent && window.parent.CryptoJS)
+                                    ? window.parent.CryptoJS.AES.encrypt(jsonString, cloudConfig.secretKey).toString()
+                                    : CryptoJS.AES.encrypt(jsonString, cloudConfig.secretKey).toString();
+                                    
+            const base64Content = btoa(encryptedData);
 
             const payload = {
-                platform: plat, startDate: start, endDate: end, id: id, nume: nume,
-                comisioPct: parseFloat(document.getElementById('form_comisio').value) / 100 || 0,
-                comenzi: parseNum(document.getElementById('form_comenzi').value),
-                bonusNum: parseNum(document.getElementById('form_bonus').value),
-                alteBonus: parseNum(document.getElementById('form_alte').value),
-                bacsis: parseNum(document.getElementById('form_bacsis').value),
-                compensare: Math.abs(parseNum(document.getElementById('form_compensare').value)),
-                taxa: Math.abs(parseNum(document.getElementById('form_taxa').value)),
-                contract: Math.abs(parseNum(document.getElementById('form_contract').value)),
-                isPaid: document.getElementById('form_status').value === "true"
+                message: "Auto-sync: Financial DB updated via Buraq App",
+                content: base64Content
             };
+            if (cloudConfig.fileSha) payload.sha = cloudConfig.fileSha;
 
-            if (internalId) {
-                const i = fleetData.findIndex(x => x._internalId === internalId);
-                if (i !== -1) fleetData[i] = { ...fleetData[i], ...payload };
-                showToast("Record updated successfully.");
-            } else {
-                payload._internalId = Date.now() + Math.random().toString();
-                fleetData.unshift(payload);
-                showToast("New record created successfully.");
+            // Push to GitHub
+            const response = await fetch(`https://api.github.com/repos/${cloudConfig.owner}/${cloudConfig.repo}/contents/${cloudConfig.path}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${cloudConfig.token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error("Cloud save failed.");
+
+            const result = await response.json();
+            cloudConfig.fileSha = result.content.sha; // Update SHA for consecutive saves
+            
+            if (!isInitial) showToast("Financials securely synced to cloud.", "success");
+        } catch (error) {
+            showToast("Cloud sync failed. Data only saved in memory.", "error");
+            console.error(error);
+        }
+    }
+
+    // --- TOAST NOTIFICATIONS ---
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        
+        const isSuccess = type === 'success';
+        const icon = isSuccess ? 'check-circle' : 'alert-circle';
+        const bgClass = isSuccess ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800';
+        const iconColor = isSuccess ? 'text-emerald-500' : 'text-red-500';
+
+        toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-modal pointer-events-auto toast-enter ${bgClass} mb-2`;
+        toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 ${iconColor}"></i><span class="font-bold text-sm tracking-wide">${message}</span>`;
+        
+        container.appendChild(toast);
+        lucide.createIcons();
+
+        setTimeout(() => {
+            toast.classList.replace('toast-enter', 'toast-exit');
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+
+    // --- UTILS & MATH ENGINE ---
+    function isDuplicate(id, start, end, platform, excludeInternalId = null) {
+        return fleetData.some(entry => 
+            entry.id.toString().trim() === id.toString().trim() &&
+            entry.startDate === start &&
+            entry.endDate === end &&
+            entry.platform === platform &&
+            (excludeInternalId ? entry._internalId !== excludeInternalId : true)
+        );
+    }
+
+    function formatDisplayDate(start, end) {
+        if (!start && !end) return 'N/A';
+        if (start && !end) return start;
+        if (!start && end) return end;
+        try {
+            const s = new Date(start); const e = new Date(end);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const sDay = String(s.getDate()).padStart(2, '0'); const sMon = months[s.getMonth()].toUpperCase();
+            const eDay = String(e.getDate()).padStart(2, '0'); const eMon = months[e.getMonth()].toUpperCase();
+            return sMon === eMon ? `${sDay}-${eDay} ${sMon}` : `${sDay} ${sMon} - ${eDay} ${eMon}`;
+        } catch(e) { return `${start} to ${end}`; }
+    }
+
+    const parseNum = (val) => {
+        if (!val) return 0;
+        const cleaned = val.toString().replace(/[^\d.-]/g, '');
+        return parseFloat(cleaned) || 0;
+    };
+
+    function calculateFormulas(entry) {
+        const venituri = entry.comenzi + entry.bonusNum + entry.alteBonus;
+        const castigNet = venituri - (venituri * entry.comisioPct);
+        
+        // Deductions are stored as positive absolute numbers and subtracted
+        const totalVenit = castigNet + entry.bacsis - entry.compensare - entry.taxa;
+        const net = castigNet + entry.bacsis - entry.taxa;
+        
+        // Calculation Flow Fix applied
+        const totalEarn = venituri + entry.bacsis;
+        const bcom6Val = totalEarn * 0.06;
+        
+        // Salary logic mapping
+        const stdComm = totalEarn * 0.10;
+        const salary = totalEarn - stdComm - Math.abs(entry.taxa) - Math.abs(entry.contract) - Math.abs(entry.compensare);
+
+        return { venituri, castigNet, totalVenit, net, bcom6Val, salary, totalEarn, stdComm };
+    }
+
+    // --- PASTE ENGINE ---
+    function processPaste() {
+        const rawText = document.getElementById('pasteArea').value.trim();
+        const pStart = document.getElementById('paste_start').value;
+        const pEnd = document.getElementById('paste_end').value;
+        const pPlatform = document.getElementById('paste_platform').value;
+        
+        if (!pStart || !pEnd) { showToast("Cycle Start and End dates are required.", 'error'); return; }
+        if (!rawText) return;
+
+        const rows = rawText.split('\n');
+        let addedCount = 0;
+        let skippedCount = 0;
+
+        rows.forEach(row => {
+            const cols = row.split('\t');
+            if (cols.length < 2) return;
+            
+            // Auto-detect empty first column (Excel copy formatting)
+            let offset = 0;
+            if (!cols[0] && cols[1] && !isNaN(parseFloat(cols[3]))) {
+                offset = 1;
             }
 
-            saveData(); // Cloud Sync Triggered
-            closeFormModal();
-            renderTable();
-        }
-
-        // --- DELETE ENGINE ---
-        function confirmDelete(internalId) {
-            recordToDelete = internalId;
-            document.getElementById('deleteModal').classList.remove('hidden');
-        }
-
-        function closeDeleteModal() {
-            recordToDelete = null;
-            document.getElementById('deleteModal').classList.add('hidden');
-        }
-
-        function executeDelete() {
-            if(recordToDelete) {
-                fleetData = fleetData.filter(e => e._internalId !== recordToDelete);
-                showToast("Record successfully deleted.", "success");
-                saveData(); // Cloud Sync Triggered
-                renderTable();
+            const cId = cols[0 + offset] ? cols[0 + offset].trim() : '';
+            if(!cId) return;
+            
+            if (isDuplicate(cId, pStart, pEnd, pPlatform)) {
+                skippedCount++;
+                return; 
             }
-            closeDeleteModal();
-        }
 
-        // --- UI UTILS ---
-        function clearFilters() {
-            document.getElementById('filter_start').value = '';
-            document.getElementById('filter_end').value = '';
-            document.getElementById('filter_platform').value = 'ALL';
-            document.getElementById('filter_name').value = '';
-            renderTable();
-        }
+            let cp = parseNum(cols[6 + offset]); if (cp === 0) cp = 4;
 
-        function toggleSelectAll(source) {
-            const checkboxes = document.querySelectorAll('.row-checkbox');
-            checkboxes.forEach(cb => cb.checked = source.checked);
-        }
+            fleetData.unshift({
+                _internalId: Date.now() + Math.random().toString(),
+                startDate: pStart, endDate: pEnd, platform: pPlatform, isPaid: false,
+                id: cId, nume: cols[1 + offset] ? cols[1 + offset].trim() : '',
+                comenzi: parseNum(cols[2 + offset]), bonusNum: parseNum(cols[3 + offset]), alteBonus: parseNum(cols[4 + offset]),
+                comisioPct: cp / 100, bacsis: parseNum(cols[8 + offset]),
+                compensare: Math.abs(parseNum(cols[9 + offset])), 
+                taxa: Math.abs(parseNum(cols[10 + offset])), 
+                contract: Math.abs(parseNum(cols[11 + offset]))
+            });
+            addedCount++;
+        });
 
-        function updateBulkStatus(statusBoolean) {
-            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
-            if (checkboxes.length === 0) { showToast("Select records using checkboxes first.", 'error'); return; }
-            const ids = Array.from(checkboxes).map(cb => cb.value);
-            fleetData.forEach(entry => { if (ids.includes(entry._internalId)) entry.isPaid = statusBoolean; });
-            showToast(`Settlement status updated for ${ids.length} records.`);
-            saveData(); // Cloud Sync Triggered
-            renderTable();
-        }
+        document.getElementById('pasteArea').value = '';
+        togglePasteModal(false);
+        
+        saveData(); // Save to Cloud
+        renderTable();
 
-        function togglePasteModal(show) { 
-            const m = document.getElementById('pasteModal'); 
-            show ? m.classList.remove('hidden') : m.classList.add('hidden'); 
+        if (addedCount > 0 && skippedCount === 0) showToast(`Successfully imported ${addedCount} records.`, 'success');
+        else if (addedCount > 0 && skippedCount > 0) showToast(`Imported ${addedCount} records. Skipped ${skippedCount} duplicates.`, 'success');
+        else if (addedCount === 0 && skippedCount > 0) showToast(`No new records added. Skipped ${skippedCount} duplicates.`, 'error');
+    }
+
+    function togglePasteModal(show) { 
+        const m = document.getElementById('pasteModal'); 
+        if (m) show ? m.classList.remove('hidden') : m.classList.add('hidden'); 
+    }
+
+    // --- FORM ENGINE (Financial Data) ---
+    function openFormModal(internalId = null) {
+        const errBox = document.getElementById('form_error_box');
+        if (errBox) errBox.classList.add('hidden');
+
+        if (internalId) {
+            document.getElementById('formModalTitle').innerHTML = '<div class="bg-amber-50 p-1.5 rounded-lg"><i data-lucide="edit-3" class="w-5 h-5 text-amber-600"></i></div> Edit Financial Record';
+            const e = fleetData.find(x => x._internalId === internalId);
+            document.getElementById('form_internal_id').value = e._internalId;
+            document.getElementById('form_platform').value = e.platform;
+            document.getElementById('form_start').value = e.startDate;
+            document.getElementById('form_end').value = e.endDate;
+            document.getElementById('form_id').value = e.id;
+            document.getElementById('form_nume').value = e.nume;
+            document.getElementById('form_comisio').value = (e.comisioPct * 100).toFixed(2);
+            document.getElementById('form_comenzi').value = e.comenzi;
+            document.getElementById('form_bonus').value = e.bonusNum;
+            document.getElementById('form_alte').value = e.alteBonus;
+            document.getElementById('form_bacsis').value = e.bacsis;
+            document.getElementById('form_compensare').value = e.compensare;
+            document.getElementById('form_taxa').value = e.taxa;
+            document.getElementById('form_contract').value = e.contract;
+            document.getElementById('form_status').value = e.isPaid ? "true" : "false";
+        } else {
+            document.getElementById('formModalTitle').innerHTML = '<div class="bg-blue-50 p-1.5 rounded-lg"><i data-lucide="file-plus" class="w-5 h-5 text-brandAccent"></i></div> Create Financial Record';
+            document.getElementById('form_internal_id').value = '';
+            document.getElementById('form_platform').value = 'WOLT';
+            document.getElementById('form_start').value = '';
+            document.getElementById('form_end').value = '';
+            document.getElementById('form_id').value = '';
+            document.getElementById('form_nume').value = '';
+            document.getElementById('form_comisio').value = '';
+            document.getElementById('form_comenzi').value = '';
+            document.getElementById('form_bonus').value = '';
+            document.getElementById('form_alte').value = '';
+            document.getElementById('form_bacsis').value = '';
+            document.getElementById('form_compensare').value = '';
+            document.getElementById('form_taxa').value = '';
+            document.getElementById('form_contract').value = '';
+            document.getElementById('form_status').value = "false";
         }
         
-        // --- SUMMARY POPUP WITH DYNAMIC COLORS ---
-        function openSummary(internalId) {
-            const entry = fleetData.find(e => e._internalId === internalId);
-            if(!entry) return;
+        document.getElementById('formModal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function closeFormModal() { document.getElementById('formModal').classList.add('hidden'); }
+
+    function saveFormRecord() {
+        const internalId = document.getElementById('form_internal_id').value;
+        const plat = document.getElementById('form_platform').value;
+        const start = document.getElementById('form_start').value;
+        const end = document.getElementById('form_end').value;
+        const id = document.getElementById('form_id').value;
+        const nume = document.getElementById('form_nume').value;
+
+        const errBox = document.getElementById('form_error_box');
+        const errMsg = document.getElementById('form_error_msg');
+
+        if (!start || !end || !id || !nume) {
+            errBox.classList.remove('hidden');
+            errMsg.innerText = "Please fill in all required fields (*).";
+            return;
+        }
+
+        if (isDuplicate(id, start, end, plat, internalId)) {
+            errBox.classList.remove('hidden');
+            errMsg.innerText = `A record for ID ${id} already exists for ${plat} in this cycle.`;
+            return;
+        }
+
+        const payload = {
+            platform: plat, startDate: start, endDate: end, id: id, nume: nume,
+            comisioPct: parseFloat(document.getElementById('form_comisio').value) / 100 || 0,
+            comenzi: parseNum(document.getElementById('form_comenzi').value),
+            bonusNum: parseNum(document.getElementById('form_bonus').value),
+            alteBonus: parseNum(document.getElementById('form_alte').value),
+            bacsis: parseNum(document.getElementById('form_bacsis').value),
+            compensare: Math.abs(parseNum(document.getElementById('form_compensare').value)),
+            taxa: Math.abs(parseNum(document.getElementById('form_taxa').value)),
+            contract: Math.abs(parseNum(document.getElementById('form_contract').value)),
+            isPaid: document.getElementById('form_status').value === "true"
+        };
+
+        if (internalId) {
+            const i = fleetData.findIndex(x => x._internalId === internalId);
+            if (i !== -1) fleetData[i] = { ...fleetData[i], ...payload };
+            showToast("Record updated successfully.");
+        } else {
+            payload._internalId = Date.now() + Math.random().toString();
+            fleetData.unshift(payload);
+            showToast("New record created successfully.");
+        }
+
+        saveData(); // Cloud Sync Triggered
+        closeFormModal();
+        renderTable();
+    }
+
+    // --- DELETE ENGINE ---
+    function confirmDelete(internalId) {
+        recordToDelete = internalId;
+        document.getElementById('deleteModal').classList.remove('hidden');
+    }
+
+    function closeDeleteModal() {
+        recordToDelete = null;
+        document.getElementById('deleteModal').classList.add('hidden');
+    }
+
+    function executeDelete() {
+        if(recordToDelete) {
+            fleetData = fleetData.filter(e => e._internalId !== recordToDelete);
+            showToast("Record successfully deleted.", "success");
+            saveData(); // Cloud Sync Triggered
+            renderTable();
+        }
+        closeDeleteModal();
+    }
+
+    // --- UI UTILS & BULK ACTIONS ---
+    function clearFilters() {
+        document.getElementById('filter_start').value = '';
+        document.getElementById('filter_end').value = '';
+        document.getElementById('filter_platform').value = 'ALL';
+        document.getElementById('filter_name').value = '';
+        renderTable();
+    }
+
+    function toggleSelectAll(source) {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(cb => cb.checked = source.checked);
+    }
+
+    function updateBulkStatus(statusBoolean) {
+        const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+        if (checkboxes.length === 0) { showToast("Select records using checkboxes first.", 'error'); return; }
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        fleetData.forEach(entry => { if (ids.includes(entry._internalId)) entry.isPaid = statusBoolean; });
+        showToast(`Settlement status updated for ${ids.length} records.`);
+        saveData(); // Cloud Sync Triggered
+        renderTable();
+    }
+
+    // --- SUMMARY POPUP (Financial Breakdowns) ---
+    function openSummary(internalId) {
+        const entry = fleetData.find(e => e._internalId === internalId);
+        if(!entry) return;
+        const calc = calculateFormulas(entry);
+
+        const totalEarning = calc.totalEarn;
+        const commission = totalEarning * 0.10; // Fixed 10% representation
+        const afterCommission = totalEarning - commission;
+        const appFee = Math.abs(entry.taxa);
+        const contract = Math.abs(entry.contract);
+        const cashOffset = Math.abs(entry.compensare);
+        const totalPaid = afterCommission - appFee - contract - cashOffset;
+
+        document.getElementById('sum_courier_name').innerText = entry.nume;
+        document.getElementById('sum_week_header').innerText = formatDisplayDate(entry.startDate, entry.endDate);
+        
+        document.getElementById('sum_tot_earn').innerText = totalEarning.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('sum_comm_val').innerText = commission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('sum_after_comm').innerText = afterCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('sum_app_fee').innerText = appFee.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('sum_contract').innerText = contract.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('sum_offset').innerText = cashOffset.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('sum_total_paid').innerText = totalPaid.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        const platHeader = document.getElementById('sum_platform_header');
+        platHeader.innerText = entry.platform;
+
+        if (entry.platform === 'GLOVO') {
+            platHeader.style.backgroundColor = '#f59e0b'; // Amber
+            platHeader.style.color = '#ffffff';
+        } else if (entry.platform === 'BOLT') {
+            platHeader.style.backgroundColor = '#10b981'; // Emerald
+            platHeader.style.color = '#ffffff';
+        } else { 
+            platHeader.style.backgroundColor = '#0ea5e9'; // Sky
+            platHeader.style.color = '#ffffff';
+        }
+
+        document.getElementById('summaryModal').classList.remove('hidden');
+    }
+    
+    function closeSummary() { document.getElementById('summaryModal').classList.add('hidden'); }
+
+    // --- EXPORT ENGINE (Financial Data) ---
+    function toggleExportModal(show) {
+        const modal = document.getElementById('exportModal');
+        if (!modal) return;
+        if (show) {
+            if (fleetData.length === 0) { showToast("No data to export.", 'error'); return; }
+            modal.classList.remove('hidden');
+        } else { 
+            modal.classList.add('hidden'); 
+        }
+    }
+
+    function executeExcelExport() {
+        const exStart = document.getElementById('export_start').value;
+        const exEnd = document.getElementById('export_end').value;
+        const exPlat = document.getElementById('export_platform').value;
+        
+        let dataToExport = fleetData.filter(entry => {
+            const passStart = exStart ? entry.startDate >= exStart : true;
+            const passEnd = exEnd ? entry.endDate <= exEnd : true;
+            const passPlat = exPlat === 'ALL' ? true : entry.platform === exPlat;
+            return passStart && passEnd && passPlat;
+        });
+
+        if (dataToExport.length === 0) { showToast("No records found for the selected filters.", 'error'); return; }
+
+        const excelData = dataToExport.map(entry => {
             const calc = calculateFormulas(entry);
-
-            const totalEarning = calc.totalEarn;
-            const commission = totalEarning * 0.10; // Fixed 10% representation
-            const afterCommission = totalEarning - commission;
-            const appFee = Math.abs(entry.taxa);
-            const contract = Math.abs(entry.contract);
-            const cashOffset = Math.abs(entry.compensare);
-            const totalPaid = afterCommission - appFee - contract - cashOffset;
-
-            document.getElementById('sum_courier_name').innerText = entry.nume;
-            document.getElementById('sum_week_header').innerText = formatDisplayDate(entry.startDate, entry.endDate);
-            
-            document.getElementById('sum_tot_earn').innerText = totalEarning.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('sum_comm_val').innerText = commission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('sum_after_comm').innerText = afterCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('sum_app_fee').innerText = appFee.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('sum_contract').innerText = contract.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('sum_offset').innerText = cashOffset.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('sum_total_paid').innerText = totalPaid.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-            const platHeader = document.getElementById('sum_platform_header');
-            platHeader.innerText = entry.platform;
-
-            if (entry.platform === 'GLOVO') {
-                platHeader.style.backgroundColor = '#f59e0b'; // Amber
-                platHeader.style.color = '#ffffff';
-            } else if (entry.platform === 'BOLT') {
-                platHeader.style.backgroundColor = '#10b981'; // Emerald
-                platHeader.style.color = '#ffffff';
-            } else { 
-                platHeader.style.backgroundColor = '#0ea5e9'; // Sky
-                platHeader.style.color = '#ffffff';
-            }
-
-            document.getElementById('summaryModal').classList.remove('hidden');
-        }
-        
-        function closeSummary() { 
-            document.getElementById('summaryModal').classList.add('hidden'); 
-        }
-
-        // --- EXPORT ENGINE ---
-        function toggleExportModal(show) {
-            const modal = document.getElementById('exportModal');
-            if (show) {
-                if (fleetData.length === 0) { showToast("No data to export.", 'error'); return; }
-                modal.classList.remove('hidden');
-            } else { 
-                modal.classList.add('hidden'); 
-            }
-        }
-
-        function executeExcelExport() {
-            const exStart = document.getElementById('export_start').value;
-            const exEnd = document.getElementById('export_end').value;
-            const exPlat = document.getElementById('export_platform').value;
-            
-            let dataToExport = fleetData.filter(entry => {
-                const passStart = exStart ? entry.startDate >= exStart : true;
-                const passEnd = exEnd ? entry.endDate <= exEnd : true;
-                const passPlat = exPlat === 'ALL' ? true : entry.platform === exPlat;
-                return passStart && passEnd && passPlat;
-            });
-
-            if (dataToExport.length === 0) { showToast("No records found for the selected filters.", 'error'); return; }
-
-            const excelData = dataToExport.map(entry => {
-                const calc = calculateFormulas(entry);
-                return {
-                    "Date Range": formatDisplayDate(entry.startDate, entry.endDate),
-                    "Platform": entry.platform,
-                    "Id curier": entry.id, "Nume": entry.nume, "Comenzi": entry.comenzi,
-                    "Bonus Num": entry.bonusNum, "Alte bonu": entry.alteBonus, "VENITURI": calc.venituri,
-                    "COMISION": entry.comisioPct, "Castig ne": calc.castigNet, "Bacsis": entry.bacsis,
-                    "Compens": entry.compensare !== 0 ? -Math.abs(entry.compensare) : 0,
-                    "Taxa apli": entry.taxa !== 0 ? -Math.abs(entry.taxa) : 0,
-                    "Contract": entry.contract !== 0 ? -Math.abs(entry.contract) : 0,
-                    "Total Venit": calc.totalVenit,
-                    "NET": calc.net, "BCOM6%": calc.bcom6Val, "Salary": calc.salary,
-                    "Total Ear": calc.totalEarn, "Status": entry.isPaid ? "Paid" : "Unpaid"
-                };
-            });
-
-            const ws = XLSX.utils.json_to_sheet(excelData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Fleet_Data");
-            XLSX.writeFile(wb, `Buraq_Export_${exStart||'All'}.xlsx`);
-            toggleExportModal(false);
-            showToast("Excel file generated successfully.");
-        }
-
-        // --- TABLE RENDERING & AGGREGATION ---
-        function renderTable() {
-            const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '';
-            document.getElementById('masterCheckbox').checked = false;
-
-            const fStart = document.getElementById('filter_start').value;
-            const fEnd = document.getElementById('filter_end').value;
-            const fPlat = document.getElementById('filter_platform').value;
-            const fName = (document.getElementById('filter_name').value || '').toLowerCase().trim();
-
-            let totalSalarySum = 0; 
-            let totalBcomSum = 0; 
-            let totalContractSum = 0;
-            
-            let agg = {
-                WOLT:  { sal: 0, com: 0, con: 0 },
-                GLOVO: { sal: 0, com: 0, con: 0 },
-                BOLT:  { sal: 0, com: 0, con: 0 }
+            return {
+                "Date Range": formatDisplayDate(entry.startDate, entry.endDate),
+                "Platform": entry.platform,
+                "Id curier": entry.id, "Nume": entry.nume, "Comenzi": entry.comenzi,
+                "Bonus Num": entry.bonusNum, "Alte bonu": entry.alteBonus, "VENITURI": calc.venituri,
+                "COMISION": entry.comisioPct, "Castig ne": calc.castigNet, "Bacsis": entry.bacsis,
+                "Compens": entry.compensare !== 0 ? -Math.abs(entry.compensare) : 0,
+                "Taxa apli": entry.taxa !== 0 ? -Math.abs(entry.taxa) : 0,
+                "Contract": entry.contract !== 0 ? -Math.abs(entry.contract) : 0,
+                "Total Venit": calc.totalVenit,
+                "NET": calc.net, "BCOM6%": calc.bcom6Val, "Salary": calc.salary,
+                "Total Ear": calc.totalEarn, "Status": entry.isPaid ? "Paid" : "Unpaid"
             };
+        });
 
-            const filteredData = fleetData.filter(entry => {
-                const passStart = fStart ? entry.startDate >= fStart : true;
-                const passEnd = fEnd ? entry.endDate <= fEnd : true;
-                const passPlat = fPlat === 'ALL' ? true : entry.platform === fPlat;
-                const matchName = (entry.nume || '').toLowerCase().includes(fName);
-                
-                const calc = calculateFormulas(entry);
-                
-                if (passStart && passEnd && matchName) {
-                    if(agg[entry.platform]) {
-                        agg[entry.platform].sal += calc.salary;
-                        agg[entry.platform].com += calc.stdComm;
-                        agg[entry.platform].con += Math.abs(entry.contract);
-                    }
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Financial_Data");
+        XLSX.writeFile(wb, `Buraq_Financial_Export_${exStart||'All'}.xlsx`);
+        toggleExportModal(false);
+        showToast("Excel file generated successfully.", "success");
+    }
+
+    // --- TABLE RENDERING & AGGREGATION ---
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        
+        const masterCheckbox = document.getElementById('masterCheckbox');
+        if(masterCheckbox) masterCheckbox.checked = false;
+
+        const fStart = document.getElementById('filter_start') ? document.getElementById('filter_start').value : '';
+        const fEnd = document.getElementById('filter_end') ? document.getElementById('filter_end').value : '';
+        const fPlat = document.getElementById('filter_platform') ? document.getElementById('filter_platform').value : 'ALL';
+        const fName = document.getElementById('filter_name') ? (document.getElementById('filter_name').value || '').toLowerCase().trim() : '';
+
+        let totalSalarySum = 0; 
+        let totalBcomSum = 0; 
+        let totalContractSum = 0;
+        
+        let agg = {
+            WOLT:  { sal: 0, com: 0, con: 0 },
+            GLOVO: { sal: 0, com: 0, con: 0 },
+            BOLT:  { sal: 0, com: 0, con: 0 }
+        };
+
+        const filteredData = fleetData.filter(entry => {
+            const passStart = fStart ? entry.startDate >= fStart : true;
+            const passEnd = fEnd ? entry.endDate <= fEnd : true;
+            const passPlat = fPlat === 'ALL' ? true : entry.platform === fPlat;
+            const matchName = (entry.nume || '').toLowerCase().includes(fName);
+            
+            const calc = calculateFormulas(entry);
+            
+            if (passStart && passEnd && passPlat && matchName) {
+                if(agg[entry.platform]) {
+                    agg[entry.platform].sal += calc.salary;
+                    agg[entry.platform].com += calc.stdComm;
+                    agg[entry.platform].con += Math.abs(entry.contract);
                 }
+            }
 
-                return passStart && passEnd && passPlat && matchName;
-            });
+            return passStart && passEnd && passPlat && matchName;
+        });
 
-            // Populate Top KPIs
+        // Populate Top KPIs if elements exist
+        if (document.getElementById('wolt_sal')) {
             document.getElementById('wolt_sal').innerText = agg.WOLT.sal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('wolt_com').innerText = agg.WOLT.com.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('wolt_con').innerText = agg.WOLT.con.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1041,748 +1137,107 @@
             document.getElementById('bolt_sal').innerText = agg.BOLT.sal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('bolt_com').innerText = agg.BOLT.com.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('bolt_con').innerText = agg.BOLT.con.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-            if (filteredData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="24" class="text-center py-12 text-slate-400 bg-white text-sm font-bold tracking-wide">NO MATCHING RECORDS FOUND</td></tr>`;
-            }
-
-            filteredData.forEach((entry) => {
-                const calc = calculateFormulas(entry);
-                totalSalarySum += calc.salary; 
-                totalBcomSum += calc.bcom6Val; 
-                totalContractSum += Math.abs(entry.contract);
-
-                const fmt = (num) => num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                const colorNeg = (num, defClass) => num < 0 ? 'text-negRed font-extrabold' : defClass;
-                const formatDeduction = (num) => num > 0 ? `<span class="text-negRed font-extrabold">-${fmt(num)}</span>` : `<span class="text-slate-400 font-medium">0.00</span>`;
-
-                const statusBadge = entry.isPaid 
-                    ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm"><i data-lucide="check" class="w-3 h-3"></i> Paid</span>`
-                    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-amber-50 text-amber-600 border border-amber-200 shadow-sm"><i data-lucide="clock" class="w-3 h-3"></i> Unpaid</span>`;
-
-                const displayDate = formatDisplayDate(entry.startDate, entry.endDate);
-
-                let platClass = "bg-slate-100 text-slate-600 border border-slate-200";
-                if(entry.platform === 'WOLT') platClass = "bg-blue-50 text-wolt border border-blue-100";
-                if(entry.platform === 'GLOVO') platClass = "bg-amber-50 text-glovo border border-amber-100";
-                if(entry.platform === 'BOLT') platClass = "bg-emerald-50 text-bolt border border-emerald-100";
-
-                tbody.innerHTML += `
-                    <tr class="hover:bg-slate-50 bg-white transition-colors group">
-                        <td class="px-4 py-3.5 text-center border-b border-slate-100"><input type="checkbox" value="${entry._internalId}" class="row-checkbox rounded border-slate-400 text-brandAccent focus:ring-brandAccent cursor-pointer w-4 h-4 transition"></td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 font-bold text-brandAccent bg-blue-50/20">${displayDate}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 font-extrabold"><span class="px-2.5 py-1 rounded-md text-[10px] uppercase tracking-widest ${platClass}">${entry.platform}</span></td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-slate-500 font-bold tracking-wide">${entry.id}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 font-extrabold">
-                            <button onclick="openSummary('${entry._internalId}')" class="text-brandAccent hover:text-navyHeader hover:underline transition-all text-left truncate max-w-[150px] inline-block align-middle">${entry.nume}</button>
-                        </td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-medium">${fmt(entry.comenzi)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-medium">${entry.bonusNum !== 0 ? fmt(entry.bonusNum) : '-'}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-medium">${entry.alteBonus !== 0 ? fmt(entry.alteBonus) : '-'}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-brandAccent">${fmt(calc.venituri)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right text-slate-500 font-bold">${(entry.comisioPct * 100).toFixed(2)}%</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold ${colorNeg(calc.castigNet, 'text-slate-700')}">${fmt(calc.castigNet)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-posGreen">${entry.bacsis !== 0 ? fmt(entry.bacsis) : '-'}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right">${formatDeduction(entry.compensare)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right">${formatDeduction(entry.taxa)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right">${formatDeduction(entry.contract)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold ${colorNeg(calc.totalVenit, 'text-slate-700')}">${fmt(calc.totalVenit)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold ${colorNeg(calc.net, 'text-slate-900')}">${fmt(calc.net)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-brandAccent">${fmt(calc.bcom6Val)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right text-[15px] ${calc.salary < 0 ? 'text-negRed font-extrabold' : 'text-slate-900 font-extrabold'}">${fmt(calc.salary)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-posGreen">${fmt(calc.totalEarn)}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-center">${statusBadge}</td>
-                        <td class="px-4 py-3.5 border-b border-slate-100 text-center flex justify-center gap-2.5">
-                            <button onclick="openFormModal('${entry._internalId}')" class="text-slate-400 hover:text-brandAccent transition-colors p-1.5 rounded-md hover:bg-blue-50" title="Edit Record"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                            <button onclick="confirmDelete('${entry._internalId}')" class="text-slate-400 hover:text-negRed transition-colors p-1.5 rounded-md hover:bg-red-50" title="Delete Record"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            document.getElementById('kpi_salary').innerText = totalSalarySum.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('kpi_bcom').innerText = totalBcomSum.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('kpi_contract').innerText = totalContractSum.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('recordCount').innerText = `${filteredData.length} records indexed`;
-
-            lucide.createIcons();
         }
 
-        // --- CLOUD AUTHENTICATION & SYNC (THE NEW CORE) ---
-        async function authenticateAndLoad() {
-            const token = document.getElementById('auth_token').value.trim();
-            const pass = document.getElementById('auth_pass').value;
-            const errBox = document.getElementById('auth_error');
-            const errMsg = document.getElementById('auth_error_msg');
-            const btnText = document.getElementById('auth_btn_text');
-            const btnIcon = document.getElementById('auth_btn_icon');
-
-            if (!token || !pass) {
-                errBox.classList.remove('hidden');
-                errMsg.innerText = "Both GitHub Token and Master Password are required.";
-                return;
-            }
-
-            // UI Loading State
-            errBox.classList.add('hidden');
-            btnText.innerText = "Authenticating...";
-            btnIcon.setAttribute('data-lucide', 'loader-2');
-            btnIcon.classList.add('animate-spin');
-            lucide.createIcons();
-
-            try {
-                // 1. Fetch encrypted database from GitHub API
-                const response = await fetch(`https://api.github.com/repos/${cloudConfig.owner}/${cloudConfig.repo}/contents/${cloudConfig.path}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                });
-
-                if (response.status === 404) {
-                    // File doesn't exist yet - Create a new empty encrypted database
-                    fleetData = [];
-                    cloudConfig.token = token;
-                    cloudConfig.secretKey = pass;
-                    await saveData(true); // Force initial save
-                    unlockUI();
-                    return;
-                }
-
-                if (!response.ok) throw new Error("Invalid GitHub Token or Repository not found.");
-
-                const data = await response.json();
-                cloudConfig.fileSha = data.sha; // Save SHA required for future updates
-                
-                // 2. Decode Base64 from GitHub
-                const encryptedContent = atob(data.content.replace(/\n/g, ''));
-                
-                // 3. Attempt AES Decryption
-                const bytes = CryptoJS.AES.decrypt(encryptedContent, pass);
-                const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
-
-                if (!decryptedString) throw new Error("Incorrect Master Encryption Password.");
-
-                // Success! Load data and unlock UI
-                fleetData = JSON.parse(decryptedString);
-                cloudConfig.token = token;
-                cloudConfig.secretKey = pass;
-                
-                renderTable();
-                unlockUI();
-
-            } catch (error) {
-                errBox.classList.remove('hidden');
-                errMsg.innerText = error.message;
-                btnText.innerText = "Decrypt & Access Workspace";
-                btnIcon.setAttribute('data-lucide', 'unlock');
-                btnIcon.classList.remove('animate-spin');
-                lucide.createIcons();
-            }
+        if (filteredData.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="24" class="text-center py-12 text-slate-400 bg-white text-sm font-bold tracking-wide">NO MATCHING RECORDS FOUND</td></tr>`;
         }
 
-        function unlockUI() {
-            const overlay = document.getElementById('authOverlay');
-            overlay.classList.add('auth-exit');
-            lucide.createIcons();
-        }
+        filteredData.forEach((entry) => {
+            const calc = calculateFormulas(entry);
+            totalSalarySum += calc.salary; 
+            totalBcomSum += calc.bcom6Val; 
+            totalContractSum += Math.abs(entry.contract);
 
-        async function saveData(isInitialCreate = false) {
-            if (!cloudConfig.token || !cloudConfig.secretKey) return; // Prevent saving if not logged in
+            const fmt = (num) => num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            const colorNeg = (num, defClass) => num < 0 ? 'text-negRed font-extrabold' : defClass;
+            const formatDeduction = (num) => num > 0 ? `<span class="text-negRed font-extrabold">-${fmt(num)}</span>` : `<span class="text-slate-400 font-medium">0.00</span>`;
 
-            try {
-                // 1. Encrypt current data state
-                const jsonString = JSON.stringify(fleetData);
-                const encryptedData = CryptoJS.AES.encrypt(jsonString, cloudConfig.secretKey).toString();
-                
-                // 2. Encode to Base64 for GitHub API
-                const base64Content = btoa(encryptedData);
+            const statusBadge = entry.isPaid 
+                ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm"><i data-lucide="check" class="w-3 h-3"></i> Paid</span>`
+                : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-amber-50 text-amber-600 border border-amber-200 shadow-sm"><i data-lucide="clock" class="w-3 h-3"></i> Unpaid</span>`;
 
-                // 3. Prepare GitHub Commit Payload
-                const payload = {
-                    message: "Auto-sync: Fleet DB updated via Buraq App",
-                    content: base64Content
-                };
+            const displayDate = formatDisplayDate(entry.startDate, entry.endDate);
 
-                // If updating an existing file, we MUST provide the SHA
-                if (cloudConfig.fileSha) payload.sha = cloudConfig.fileSha;
+            let platClass = "bg-slate-100 text-slate-600 border border-slate-200";
+            if(entry.platform === 'WOLT') platClass = "bg-blue-50 text-wolt border border-blue-100";
+            if(entry.platform === 'GLOVO') platClass = "bg-amber-50 text-glovo border border-amber-100";
+            if(entry.platform === 'BOLT') platClass = "bg-emerald-50 text-bolt border border-emerald-100";
 
-                // 4. Push to GitHub
-                const response = await fetch(`https://api.github.com/repos/${cloudConfig.owner}/${cloudConfig.repo}/contents/${cloudConfig.path}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${cloudConfig.token}`,
-                        'Accept': 'application/vnd.github.v3+json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
+            tbody.innerHTML += `
+                <tr class="hover:bg-slate-50 bg-white transition-colors group">
+                    <td class="px-4 py-3.5 text-center border-b border-slate-100"><input type="checkbox" value="${entry._internalId}" class="row-checkbox rounded border-slate-400 text-brandAccent focus:ring-brandAccent cursor-pointer w-4 h-4 transition"></td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 font-bold text-brandAccent bg-blue-50/20">${displayDate}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 font-extrabold"><span class="px-2.5 py-1 rounded-md text-[10px] uppercase tracking-widest ${platClass}">${entry.platform}</span></td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-slate-500 font-bold tracking-wide">${entry.id}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 font-extrabold">
+                        <button onclick="openSummary('${entry._internalId}')" class="text-brandAccent hover:text-navyHeader hover:underline transition-all text-left truncate max-w-[150px] inline-block align-middle">${entry.nume}</button>
+                    </td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-medium">${fmt(entry.comenzi)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-medium">${entry.bonusNum !== 0 ? fmt(entry.bonusNum) : '-'}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-medium">${entry.alteBonus !== 0 ? fmt(entry.alteBonus) : '-'}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-brandAccent">${fmt(calc.venituri)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right text-slate-500 font-bold">${(entry.comisioPct * 100).toFixed(2)}%</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold ${colorNeg(calc.castigNet, 'text-slate-700')}">${fmt(calc.castigNet)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-posGreen">${entry.bacsis !== 0 ? fmt(entry.bacsis) : '-'}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right">${formatDeduction(entry.compensare)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right">${formatDeduction(entry.taxa)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right">${formatDeduction(entry.contract)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold ${colorNeg(calc.totalVenit, 'text-slate-700')}">${fmt(calc.totalVenit)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold ${colorNeg(calc.net, 'text-slate-900')}">${fmt(calc.net)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-brandAccent">${fmt(calc.bcom6Val)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right text-[15px] ${calc.salary < 0 ? 'text-negRed font-extrabold' : 'text-slate-900 font-extrabold'}">${fmt(calc.salary)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-right font-extrabold text-posGreen">${fmt(calc.totalEarn)}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-center">${statusBadge}</td>
+                    <td class="px-4 py-3.5 border-b border-slate-100 text-center flex justify-center gap-2.5">
+                        <button onclick="openFormModal('${entry._internalId}')" class="text-slate-400 hover:text-brandAccent transition-colors p-1.5 rounded-md hover:bg-blue-50" title="Edit Record"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                        <button onclick="confirmDelete('${entry._internalId}')" class="text-slate-400 hover:text-negRed transition-colors p-1.5 rounded-md hover:bg-red-50" title="Delete Record"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
 
-                if (!response.ok) throw new Error("Failed to sync with cloud database.");
+        if (document.getElementById('kpi_salary')) document.getElementById('kpi_salary').innerText = totalSalarySum.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (document.getElementById('kpi_bcom')) document.getElementById('kpi_bcom').innerText = totalBcomSum.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (document.getElementById('kpi_contract')) document.getElementById('kpi_contract').innerText = totalContractSum.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (document.getElementById('recordCount')) document.getElementById('recordCount').innerText = `${filteredData.length} records indexed`;
 
-                const result = await response.json();
-                cloudConfig.fileSha = result.content.sha; // Update SHA for the next save
-                
-                if (!isInitialCreate) showToast("Database securely synced to cloud.", "success");
+        lucide.createIcons();
+    }
 
-            } catch (error) {
-                showToast("Cloud sync failed. Data only saved in memory.", "error");
-                console.error("Save Error:", error);
-            }
+    // --- WORKSPACE SWITCHER LOGIC ---
+    function openSecondApp() {
+        const overlay = document.getElementById('app-overlay');
+        const iframe = document.getElementById('app-iframe');
+        
+        if (overlay) {
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+            setTimeout(() => {
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+            }, 10);
         }
         
-       // --- WORKSPACE SWITCHER LOGIC ---
-function openSecondApp() {
-    const overlay = document.getElementById('app-overlay');
-    const iframe = document.getElementById('app-iframe');
-    
-    overlay.classList.remove('hidden');
-    overlay.classList.add('flex');
-    
-    // Trigger layout for smooth transition
-    setTimeout(() => {
-        overlay.classList.remove('opacity-0');
-        overlay.classList.add('opacity-100');
-    }, 10);
-    
-    // STATE OF THE ART: Securely load the external file instead of injecting text
-    if (!iframe.src || iframe.src === window.location.href || iframe.src === '') {
-        iframe.src = 'couriers.html';
+        if (iframe && (!iframe.src || iframe.src === window.location.href || iframe.src === '')) {
+            iframe.src = 'couriers.html';
+        }
     }
-}
+    
+    function closeSecondApp() {
+        const overlay = document.getElementById('app-overlay');
+        if (overlay) {
+            overlay.classList.remove('opacity-100');
+            overlay.classList.add('opacity-0');
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }, 300);
+        }
+    }
 
-        // Initialize icons on load (Dashboard waits behind login screen)
-        lucide.createIcons();
-    </script>
-<div id="summaryModal" class="fixed inset-0 z-50 hidden flex items-center justify-center pt-10 pb-10">
-            <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onclick="closeSummary()"></div>
-            <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-modal modal-enter overflow-hidden flex flex-col border border-slate-200">
-                <div class="flex justify-between items-center p-5 bg-slate-50 border-b border-slate-200 shrink-0">
-                    <h3 class="text-sm font-extrabold text-slate-800 flex items-center gap-2">
-                        <i data-lucide="contact-2" class="w-4 h-4 text-slate-500"></i> Courier Profile
-                    </h3>
-                    <button onclick="closeSummary()" class="text-slate-400 hover:text-slate-800 transition"><i data-lucide="x" class="w-5 h-5"></i></button>
-                </div>
-                
-                <div class="p-6 bg-white" id="profileContent">
-                </div>
-                
-                <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
-                    <button type="button" onclick="closeSummary()" class="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold transition shadow-sm">Close Profile</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="deleteModal" class="fixed inset-0 z-50 hidden flex items-center justify-center pt-10 pb-10">
-            <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onclick="closeDeleteModal()"></div>
-            <div class="relative w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-modal modal-enter overflow-hidden flex flex-col">
-                <div class="p-8 text-center space-y-4">
-                    <div class="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3 border border-red-100 shadow-sm">
-                        <i data-lucide="alert-triangle" class="w-8 h-8"></i>
-                    </div>
-                    <h3 class="text-xl font-extrabold text-slate-900">Confirm Deletion</h3>
-                    <p class="text-sm text-slate-500 font-medium leading-relaxed">You are about to permanently remove this courier record from the fleet database. This action cannot be undone.</p>
-                </div>
-                <div class="p-5 border-t border-slate-100 bg-slate-50 flex gap-3">
-                    <button type="button" onclick="closeDeleteModal()" class="flex-1 px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-bold transition shadow-sm">Cancel</button>
-                    <button type="button" onclick="executeDelete()" class="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition shadow-sm">Delete Record</button>
-                </div>
-            </div>
-        </div>
-
-        <script>
-            // --- DATA ARCHITECTURE (CLOUD SYNCED) ---
-            let fleetData = [];
-            let recordToDelete = null;
-            let currentSort = { column: null, direction: 'asc' };
-            let cloudSha = null; // Track file version for GitHub API
-
-            // --- CLOUD INITIALIZATION ---
-            async function initApp() {
-                lucide.createIcons();
-                
-                // Fetch context from the main parent window
-                if (!window.parent || !window.parent.cloudConfig || !window.parent.cloudConfig.token) {
-                    showToast("Cloud connection error. Please refresh and log in.", "error");
-                    return;
-                }
-
-                const config = window.parent.cloudConfig;
-                
-                try {
-                    // Fetch courier database from GitHub
-                    const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
-                        headers: {
-                            'Authorization': `Bearer ${config.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    });
-
-                    if (response.status === 404) {
-                        // First time creation
-                        fleetData = [];
-                        await saveData(true); 
-                        renderTable();
-                        return;
-                    }
-
-                    if (!response.ok) throw new Error("Failed to fetch cloud database.");
-
-                    const data = await response.json();
-                    cloudSha = data.sha;
-                    
-                    // Decrypt using CryptoJS from parent window
-                    const encryptedContent = atob(data.content.replace(/\n/g, ''));
-                    const bytes = window.parent.CryptoJS.AES.decrypt(encryptedContent, config.secretKey);
-                    const decryptedString = bytes.toString(window.parent.CryptoJS.enc.Utf8);
-
-                    if (decryptedString) {
-                        fleetData = JSON.parse(decryptedString);
-                    }
-                    renderTable();
-                } catch (error) {
-                    console.error(error);
-                    showToast("Error decrypting database.", "error");
-                }
-            }
-
-            async function saveData(isInitial = false) {
-                if (!window.parent || !window.parent.cloudConfig || !window.parent.cloudConfig.token) return;
-                const config = window.parent.cloudConfig;
-
-                try {
-                    // Encrypt Data
-                    const jsonString = JSON.stringify(fleetData);
-                    const encryptedData = window.parent.CryptoJS.AES.encrypt(jsonString, config.secretKey).toString();
-                    const base64Content = btoa(encryptedData);
-
-                    const payload = {
-                        message: "Auto-sync: Courier Profiles updated",
-                        content: base64Content
-                    };
-                    if (cloudSha) payload.sha = cloudSha;
-
-                    // Push to GitHub
-                    const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${config.token}`,
-                            'Accept': 'application/vnd.github.v3+json',
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!response.ok) throw new Error("Cloud save failed.");
-
-                    const result = await response.json();
-                    cloudSha = result.content.sha;
-                    
-                    if (!isInitial) showToast("Profiles securely synced to cloud.", "success");
-                } catch (error) {
-                    showToast("Cloud sync failed. Data only saved in memory.", "error");
-                    console.error(error);
-                }
-            }
-
-            // --- TOAST NOTIFICATIONS ---
-            function showToast(message, type = 'success') {
-                const container = document.getElementById('toastContainer');
-                const toast = document.createElement('div');
-                
-                const isSuccess = type === 'success';
-                const icon = isSuccess ? 'check-circle' : 'alert-circle';
-                const bgClass = isSuccess ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800';
-                const iconColor = isSuccess ? 'text-emerald-500' : 'text-red-500';
-
-                toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-modal pointer-events-auto toast-enter ${bgClass}`;
-                toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 ${iconColor}"></i><span class="font-bold text-sm tracking-wide">${message}</span>`;
-                
-                container.appendChild(toast);
-                lucide.createIcons();
-
-                setTimeout(() => {
-                    toast.classList.replace('toast-enter', 'toast-exit');
-                    setTimeout(() => toast.remove(), 300);
-                }, 4000);
-            }
-
-            // --- FORM ENGINE ---
-            function openFormModal(index = null) {
-                const errBox = document.getElementById('form_error_box');
-                errBox.classList.add('hidden');
-
-                if (index !== null) {
-                    document.getElementById('formModalTitle').innerHTML = '<div class="bg-amber-50 p-1.5 rounded-lg"><i data-lucide="edit-3" class="w-5 h-5 text-amber-600"></i></div> Edit Courier Record';
-                    const e = fleetData[index];
-                    
-                    document.getElementById('form_internal_index').value = index;
-                    document.getElementById('form_id').value = e.id;
-                    document.getElementById('form_name').value = e.name;
-                    document.getElementById('form_phone').value = e.phone;
-                    document.getElementById('form_email').value = e.email;
-                    document.getElementById('form_city').value = e.city;
-                    document.getElementById('form_cnp').value = e.cnp;
-                    document.getElementById('form_address').value = e.address;
-                    document.getElementById('form_platform').value = e.platform;
-                    document.getElementById('form_contract').value = e.contract || 'Full-time (8h)';
-                    document.getElementById('form_role').value = e.role || 'Regular Worker';
-                    document.getElementById('form_status').value = e.status;
-                    document.getElementById('form_doc').value = '';
-                } else {
-                    document.getElementById('formModalTitle').innerHTML = '<div class="bg-blue-50 p-1.5 rounded-lg"><i data-lucide="user-plus" class="w-5 h-5 text-brandAccent"></i></div> Onboard Courier';
-                    
-                    document.getElementById('form_internal_index').value = '';
-                    document.getElementById('form_id').value = '';
-                    document.getElementById('form_name').value = '';
-                    document.getElementById('form_phone').value = '';
-                    document.getElementById('form_email').value = '';
-                    document.getElementById('form_city').value = '';
-                    document.getElementById('form_cnp').value = '';
-                    document.getElementById('form_address').value = '';
-                    document.getElementById('form_platform').value = 'WOLT';
-                    document.getElementById('form_contract').value = 'Full-time (8h)';
-                    document.getElementById('form_role').value = 'Regular Worker';
-                    document.getElementById('form_status').value = 'Active';
-                    document.getElementById('form_doc').value = '';
-                }
-                
-                document.getElementById('formModal').classList.remove('hidden');
-                lucide.createIcons();
-            }
-
-            function closeFormModal() { 
-                document.getElementById('formModal').classList.add('hidden'); 
-            }
-
-            function saveFormRecord() {
-                const index = document.getElementById('form_internal_index').value;
-                const newId = document.getElementById('form_id').value.trim();
-                const newName = document.getElementById('form_name').value.trim();
-                const fileInput = document.getElementById('form_doc');
-                const fileName = fileInput.files.length > 0 ? fileInput.files[0].name : '';
-
-                const errBox = document.getElementById('form_error_box');
-                const errMsg = document.getElementById('form_error_msg');
-
-                if (!newId || !newName) {
-                    errBox.classList.remove('hidden');
-                    errMsg.innerText = "Please fill in ID and Full Name.";
-                    return;
-                }
-
-                // Duplicate Name Check
-                const isDuplicate = fleetData.some((emp, i) => {
-                    if (index !== '' && i == index) return false;
-                    return emp.name.toLowerCase() === newName.toLowerCase();
-                });
-
-                if (isDuplicate) {
-                    errBox.classList.remove('hidden');
-                    errMsg.innerText = `An employee named "${newName}" already exists in the fleet.`;
-                    return;
-                }
-
-                const payload = {
-                    id: newId,
-                    name: newName,
-                    phone: document.getElementById('form_phone').value,
-                    email: document.getElementById('form_email').value,
-                    city: document.getElementById('form_city').value || 'Unspecified',
-                    cnp: document.getElementById('form_cnp').value,
-                    address: document.getElementById('form_address').value,
-                    platform: document.getElementById('form_platform').value,
-                    contract: document.getElementById('form_contract').value,
-                    role: document.getElementById('form_role').value,
-                    status: document.getElementById('form_status').value,
-                };
-
-                if (index !== '') {
-                    payload.docName = fileName ? fileName : fleetData[index].docName;
-                    fleetData[index] = payload;
-                    showToast("Courier profile updated successfully.");
-                } else {
-                    payload.docName = fileName;
-                    fleetData.unshift(payload);
-                    showToast("New courier onboarded successfully.");
-                }
-
-                saveData(); // Syncs to cloud
-                closeFormModal();
-                renderTable();
-            }
-
-            // --- PROFILE VIEW ---
-            function openSummary(index) {
-                const emp = fleetData[index];
-                const content = document.getElementById('profileContent');
-                const initial = emp.name.charAt(0).toUpperCase();
-
-                let platColor = 'bg-slate-100 text-slate-700';
-                if(emp.platform === 'WOLT') platColor = 'bg-blue-50 text-wolt border-blue-100';
-                if(emp.platform === 'GLOVO') platColor = 'bg-amber-50 text-glovo border-amber-100';
-                if(emp.platform === 'BOLT') platColor = 'bg-emerald-50 text-bolt border-emerald-100';
-                if(emp.platform === 'TAZZ') platColor = 'bg-orange-50 text-tazz border-orange-100';
-
-                let statColor = emp.status === 'Active' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200';
-
-                content.innerHTML = `
-                    <div class="flex items-center gap-5 mb-6 pb-6 border-b border-slate-100">
-                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-brandAccent to-blue-400 text-white flex items-center justify-center text-2xl font-extrabold shadow-md">${initial}</div>
-                        <div>
-                            <h2 class="text-2xl font-extrabold text-slate-800">${emp.name}</h2>
-                            <div class="flex items-center gap-3 mt-1.5">
-                                <span class="text-sm font-bold text-slate-500">ID: ${emp.id}</span>
-                                <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-widest border ${platColor}">${emp.platform}</span>
-                                <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-widest border ${statColor}">${emp.status}</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-y-5 gap-x-8">
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Phone Number</p>
-                            <p class="text-sm font-bold text-slate-800">${emp.phone || 'N/A'}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Email Address</p>
-                            <p class="text-sm font-bold text-slate-800">${emp.email || 'N/A'}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">City / Region</p>
-                            <p class="text-sm font-bold text-slate-800">${emp.city || 'N/A'}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">CNP Number</p>
-                            <p class="text-sm font-bold text-slate-800 font-mono">${emp.cnp || 'N/A'}</p>
-                        </div>
-                        <div class="col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Full Home Address</p>
-                            <p class="text-sm font-bold text-slate-800 leading-relaxed">${emp.address || 'N/A'}</p>
-                        </div>
-                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Contract Status</p>
-                            <p class="text-sm font-bold text-slate-800">${emp.contract}</p>
-                        </div>
-                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Courier Role</p>
-                            <p class="text-sm font-bold text-slate-800">${emp.role}</p>
-                        </div>
-                        <div class="col-span-2">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Identity Document</p>
-                            <p class="text-sm font-bold ${emp.docName ? 'text-brandAccent' : 'text-slate-500'} flex items-center gap-2">
-                                <i data-lucide="file-check-2" class="w-4 h-4"></i> ${emp.docName || 'No document uploaded'}
-                            </p>
-                        </div>
-                    </div>
-                `;
-                
-                document.getElementById('summaryModal').classList.remove('hidden');
-                lucide.createIcons();
-            }
-
-            function closeSummary() { 
-                document.getElementById('summaryModal').classList.add('hidden'); 
-            }
-
-            // --- DELETE ENGINE ---
-            function confirmDelete(index) {
-                recordToDelete = index;
-                document.getElementById('deleteModal').classList.remove('hidden');
-            }
-
-            function closeDeleteModal() {
-                recordToDelete = null;
-                document.getElementById('deleteModal').classList.add('hidden');
-            }
-
-            function executeDelete() {
-                if(recordToDelete !== null) {
-                    fleetData.splice(recordToDelete, 1);
-                    showToast("Courier permanently deleted from database.", "success");
-                    saveData(); // Syncs to cloud
-                    renderTable();
-                }
-                closeDeleteModal();
-            }
-
-            // --- EXCEL IMPORT / EXPORT (Using SheetJS) ---
-            function processExcelImport(event) {
-                const file = event.target.files[0];
-                if (!file) return;
-
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const importedData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                    
-                    let added = 0, skipped = 0;
-                    importedData.forEach(row => {
-                        const empName = row.Name || row.name || row.NAME || '';
-                        if (!empName) return;
-
-                        if (fleetData.some(emp => emp.name.toLowerCase() === empName.toLowerCase())) {
-                            skipped++;
-                        } else {
-                            fleetData.unshift({
-                                id: row.ID || row.id || row.CourierID || Math.floor(Math.random() * 100000).toString(),
-                                name: empName, city: row.City || row.city || 'Unspecified',
-                                phone: row.Phone || row.phone || '', email: row.Email || row.email || '',
-                                platform: (row.Platform || row.platform || 'WOLT').toUpperCase(), 
-                                status: row.Status || row.status || 'Active',
-                                address: row.Address || row.address || '', cnp: row.CNP || row.cnp || '',
-                                contract: row.Contract || row.contract || 'Full-time (8h)', role: row.Role || row.role || 'Regular Worker', docName: ''
-                            });
-                            added++;
-                        }
-                    });
-
-                    saveData(); // Syncs to cloud
-                    renderTable();
-                    showToast(`Import Success: ${added} added, ${skipped} duplicates skipped.`);
-                };
-                reader.readAsArrayBuffer(file);
-                event.target.value = ''; 
-            }
-
-            function executeExcelExport() {
-                if(fleetData.length === 0) return showToast("No data to export.", 'error');
-                
-                const exportData = fleetData.map(emp => ({
-                    "ID Curier": emp.id, "Nume": emp.name, "City": emp.city, "Phone": emp.phone, "Email": emp.email,
-                    "Platform": emp.platform, "Status": emp.status, "CNP": emp.cnp, "Address": emp.address,
-                    "Contract": emp.contract, "Role": emp.role
-                }));
-
-                const ws = XLSX.utils.json_to_sheet(exportData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Fleet_Database");
-                XLSX.writeFile(wb, "Buraq_Fleet_Database.xlsx");
-                showToast("Database exported successfully.");
-            }
-
-            // --- UI & RENDERING ---
-            function clearFilters() {
-                document.getElementById('filter_platform').value = 'ALL';
-                document.getElementById('filter_status').value = 'ALL';
-                document.getElementById('filter_search').value = '';
-                renderTable();
-            }
-
-            function toggleSelectAll(source) {
-                document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = source.checked);
-            }
-
-            function updateBulkStatus(newStatus) {
-                const checkboxes = document.querySelectorAll('.row-checkbox:checked');
-                if (checkboxes.length === 0) { showToast("Select records using checkboxes first.", 'error'); return; }
-                
-                checkboxes.forEach(cb => {
-                    fleetData[cb.value].status = newStatus;
-                });
-                
-                saveData(); // Syncs to cloud
-                renderTable();
-                showToast(`Updated status to ${newStatus} for ${checkboxes.length} couriers.`);
-            }
-
-            function sortTable(column) {
-                if (currentSort.column === column) {
-                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
-                } else {
-                    currentSort.column = column;
-                    currentSort.direction = 'asc';
-                }
-
-                fleetData.sort((a, b) => {
-                    let valA = a[column].toLowerCase();
-                    let valB = b[column].toLowerCase();
-                    
-                    if (!isNaN(valA) && !isNaN(valB)) { valA = Number(valA); valB = Number(valB); }
-                    if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
-                    if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
-                    return 0;
-                });
-                renderTable();
-            }
-
-            function renderTable() {
-                const tbody = document.getElementById('tableBody');
-                tbody.innerHTML = '';
-                document.getElementById('masterCheckbox').checked = false;
-
-                const fPlat = document.getElementById('filter_platform').value;
-                const fStat = document.getElementById('filter_status').value;
-                const fSearch = (document.getElementById('filter_search').value || '').toLowerCase().trim();
-
-                let activeCount = 0; let inactiveCount = 0;
-
-                const filteredData = fleetData.filter((entry, index) => {
-                    // Keep track of original index for editing
-                    entry.originalIndex = index;
-                    
-                    const passPlat = fPlat === 'ALL' ? true : entry.platform === fPlat;
-                    const passStat = fStat === 'ALL' ? true : entry.status === fStat;
-                    const matchSearch = `${entry.name} ${entry.id} ${entry.phone} ${entry.city}`.toLowerCase().includes(fSearch);
-
-                    if (entry.status === 'Active') activeCount++; else inactiveCount++;
-
-                    return passPlat && passStat && matchSearch;
-                });
-
-                document.getElementById('kpi_total').innerText = fleetData.length;
-                document.getElementById('kpi_active').innerText = activeCount;
-                document.getElementById('kpi_inactive').innerText = inactiveCount;
-
-                if (filteredData.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-slate-400 bg-white text-sm font-bold tracking-wide">NO COURIERS MATCH YOUR FILTERS</td></tr>`;
-                }
-
-                filteredData.forEach((entry) => {
-                    let platClass = "bg-slate-100 text-slate-600 border border-slate-200";
-                    if(entry.platform === 'WOLT') platClass = "bg-blue-50 text-wolt border border-blue-100";
-                    if(entry.platform === 'GLOVO') platClass = "bg-amber-50 text-glovo border border-amber-100";
-                    if(entry.platform === 'BOLT') platClass = "bg-emerald-50 text-bolt border border-emerald-100";
-                    if(entry.platform === 'TAZZ') platClass = "bg-orange-50 text-tazz border border-orange-100";
-
-                    const statusBadge = entry.status === 'Active'
-                        ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm"><i data-lucide="check" class="w-3 h-3"></i> Active</span>`
-                        : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-red-50 text-red-600 border border-red-200 shadow-sm"><i data-lucide="ban" class="w-3 h-3"></i> Inactive</span>`;
-
-                    tbody.innerHTML += `
-                        <tr class="hover:bg-slate-50 bg-white transition-colors group">
-                            <td class="px-4 py-4 text-center border-b border-slate-100"><input type="checkbox" value="${entry.originalIndex}" class="row-checkbox rounded border-slate-400 text-brandAccent focus:ring-brandAccent cursor-pointer w-4 h-4 transition"></td>
-                            <td class="px-4 py-4 border-b border-slate-100 text-slate-500 font-extrabold tracking-wide">${entry.id}</td>
-                            <td class="px-4 py-4 border-b border-slate-100">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-brandAccent/10 text-brandAccent flex items-center justify-center font-bold text-xs">${entry.name.charAt(0).toUpperCase()}</div>
-                                    <div>
-                                        <button onclick="openSummary(${entry.originalIndex})" class="font-extrabold text-slate-800 hover:text-brandAccent hover:underline transition-all text-left block">${entry.name}</button>
-                                        <span class="text-[11px] font-bold text-slate-400 tracking-wide">${entry.phone || entry.email || 'No Contact Data'}</span>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-4 py-4 border-b border-slate-100 text-slate-700 font-bold">${entry.city}</td>
-                            <td class="px-4 py-4 border-b border-slate-100"><span class="px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-widest ${platClass}">${entry.platform}</span></td>
-                            <td class="px-4 py-4 border-b border-slate-100 text-center">${statusBadge}</td>
-                            <td class="px-4 py-4 border-b border-slate-100 text-center flex justify-center gap-2.5">
-                                <button onclick="openFormModal(${entry.originalIndex})" class="text-slate-400 hover:text-amber-600 transition-colors p-1.5 rounded-md hover:bg-amber-50" title="Edit Profile"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                <button onclick="confirmDelete(${entry.originalIndex})" class="text-slate-400 hover:text-negRed transition-colors p-1.5 rounded-md hover:bg-red-50" title="Delete Profile"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                            </td>
-                        </tr>
-                    `;
-                });
-
-                document.getElementById('recordCount').innerText = `${filteredData.length} couriers matching filters`;
-                lucide.createIcons();
-            }
-
-            // Initialize App on Load
-            document.addEventListener('DOMContentLoaded', initApp);
-        </script>
-    </body>
-</html>
-</textarea>
+    // Initialize App on Load
+    document.addEventListener('DOMContentLoaded', initApp);
+</script>
 </body>
 </html>
