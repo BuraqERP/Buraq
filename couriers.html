@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buraq Fleet Management System</title>
+    <title>Buraq Courier Database</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -44,13 +43,11 @@
     <style>
         body { background-color: theme('colors.appBg'); color: theme('colors.textMain'); font-size: 14px; overflow-x: hidden; }
         
-        /* Premium Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        /* Custom Premium Select Arrows */
         select {
             appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
@@ -59,33 +56,18 @@
             background-size: 1.1rem 1.1rem;
         }
 
-        /* Datalist Arrow Styling (Webkit) */
-        input::-webkit-calendar-picker-indicator {
-            color: transparent;
-            background: transparent;
-            cursor: pointer;
-            z-index: 1;
-        }
+        input::-webkit-calendar-picker-indicator { color: transparent; background: transparent; cursor: pointer; z-index: 1; }
 
-        /* Smooth Animations */
         .modal-enter { animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        @keyframes modalFadeIn {
-            from { opacity: 0; transform: scale(0.96) translateY(-15px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
-        }
+        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.96) translateY(-15px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
         .toast-enter { animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         .toast-exit { animation: fadeOut 0.3s ease-in forwards; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeOut { to { opacity: 0; transform: scale(0.96); } }
         
-        /* Interactive Input Transitions */
-        .premium-input {
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .premium-input:focus {
-            transform: translateY(-1px);
-        }
+        .premium-input { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+        .premium-input:focus { transform: translateY(-1px); }
     </style>
 </head>
 <body class="min-h-screen pb-12 antialiased relative selection:bg-brandAccent selection:text-white">
@@ -98,7 +80,6 @@
                 </div>
                 <div>
                     <h1 class="text-2xl font-extrabold tracking-wide uppercase text-slate-50">Courier Database</h1>
-                    
                 </div>
             </div>
             
@@ -147,10 +128,9 @@
         </section>
 
         <section class="flex flex-col xl:flex-row justify-between items-center gap-5 bg-white p-4 border border-borderColor rounded-2xl shadow-premium">
-            
             <div class="flex flex-col md:flex-row items-center gap-3 w-full xl:w-auto">
                 <select id="filter_platform" onchange="renderTable()" class="px-4 py-2.5 w-full md:w-auto text-sm border border-slate-200 rounded-lg focus:border-brandAccent focus:outline-none focus:ring-1 focus:ring-brandAccent shadow-sm cursor-pointer bg-slate-50 font-semibold text-slate-700 transition-colors hover:bg-white premium-input">
-                    <option value="ALL">Platforms</option>
+                    <option value="ALL">All Platforms</option>
                     <option value="WOLT">Wolt Fleet</option>
                     <option value="GLOVO">Glovo Fleet</option>
                     <option value="BOLT">Bolt Fleet</option>
@@ -158,7 +138,7 @@
                 </select>
                 
                 <select id="filter_status" onchange="renderTable()" class="px-4 py-2.5 w-full md:w-auto text-sm border border-slate-200 rounded-lg focus:border-brandAccent focus:outline-none focus:ring-1 focus:ring-brandAccent shadow-sm cursor-pointer bg-slate-50 font-semibold text-slate-700 transition-colors hover:bg-white premium-input">
-                    <option value="ALL"> Statuses</option>
+                    <option value="ALL">All Statuses</option>
                     <option value="Active">Active Only</option>
                     <option value="Inactive">Inactive Only</option>
                 </select>
@@ -206,7 +186,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100 text-sm text-slate-700">
-                        </tbody>
+                    </tbody>
                 </table>
             </div>
             <div class="bg-slate-50 border-t border-borderColor p-4 flex justify-between items-center text-sm text-slate-500 font-semibold z-20 relative">
@@ -345,8 +325,7 @@
                 <button onclick="closeSummary()" class="text-slate-400 hover:text-slate-800 transition"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
-            <div class="p-6 bg-white" id="profileContent">
-                </div>
+            <div class="p-6 bg-white" id="profileContent"></div>
             
             <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
                 <button type="button" onclick="closeSummary()" class="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold transition shadow-sm">Close Profile</button>
@@ -370,6 +349,7 @@
             </div>
         </div>
     </div>
+
     <script>
     // --- STATE & ARCHITECTURE ---
     let fleetData = [];
@@ -377,11 +357,10 @@
     let recordToDelete = null;
     let currentSort = { column: null, direction: 'asc' };
 
-    // --- CLOUD SYNC INITIALIZATION (From Script 1) ---
+    // --- CLOUD SYNC INITIALIZATION ---
     async function initApp() {
         lucide.createIcons();
         
-        // Wait for parent window to pass the cloud credentials
         if (!window.parent || !window.parent.cloudConfig || !window.parent.cloudConfig.token) {
             showToast("Not authenticated. Please log in on the main screen.", "error");
             return;
@@ -391,7 +370,11 @@
         
         try {
             const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
-                headers: { 'Authorization': `Bearer ${config.token}`, 'Accept': 'application/vnd.github.v3+json' }
+                headers: { 
+                    'Authorization': `Bearer ${config.token}`, 
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Cache-Control': 'no-cache'
+                }
             });
 
             if (response.status === 404) {
@@ -406,7 +389,7 @@
             const data = await response.json();
             cloudSha = data.sha;
             
-            // Decrypt data securely in browser
+            // Decrypt safely via Parent's JS
             const encryptedContent = atob(data.content.replace(/\n/g, ''));
             const bytes = window.parent.CryptoJS.AES.decrypt(encryptedContent, config.secretKey);
             const decryptedString = bytes.toString(window.parent.CryptoJS.enc.Utf8);
@@ -417,7 +400,7 @@
             renderTable();
         } catch (error) {
             console.error(error);
-            showToast("Failed to decrypt database.", "error");
+            showToast("Failed to load or decrypt CRM database.", "error");
         }
     }
 
@@ -430,11 +413,27 @@
             const payload = { message: "Sync: Courier Database Update", content: btoa(encryptedData) };
             if (cloudSha) payload.sha = cloudSha;
 
-            const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
+            let response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+
+            // 409 CONFLICT AUTORESOLVE
+            if (response.status === 409) {
+                console.warn("SHA Conflict detected. Resolving...");
+                const latestRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
+                    headers: { 'Authorization': `Bearer ${config.token}`, 'Accept': 'application/vnd.github.v3+json', 'Cache-Control': 'no-cache' }
+                });
+                const latestData = await latestRes.json();
+                payload.sha = latestData.sha;
+                
+                response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/couriers_db.enc`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
 
             if (!response.ok) throw new Error("Sync Failed");
             const result = await response.json();
@@ -446,11 +445,9 @@
         }
     }
 
-    // --- TOAST NOTIFICATIONS (Rich UI from Script 2) ---
     function showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
         const toast = document.createElement('div');
-        
         const isSuccess = type === 'success';
         const icon = isSuccess ? 'check-circle' : 'alert-circle';
         const bgClass = isSuccess ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800';
@@ -458,7 +455,6 @@
 
         toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-modal pointer-events-auto toast-enter ${bgClass} mb-2`;
         toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 ${iconColor}"></i><span class="font-bold text-sm tracking-wide">${message}</span>`;
-        
         container.appendChild(toast);
         lucide.createIcons();
 
@@ -476,7 +472,6 @@
         if (index !== null) {
             document.getElementById('formModalTitle').innerHTML = '<div class="bg-amber-50 p-1.5 rounded-lg"><i data-lucide="edit-3" class="w-5 h-5 text-amber-600"></i></div> Edit Courier Record';
             const e = fleetData[index];
-            
             document.getElementById('form_internal_index').value = index;
             document.getElementById('form_id').value = e.id;
             document.getElementById('form_name').value = e.name;
@@ -492,7 +487,6 @@
             document.getElementById('form_doc').value = '';
         } else {
             document.getElementById('formModalTitle').innerHTML = '<div class="bg-blue-50 p-1.5 rounded-lg"><i data-lucide="user-plus" class="w-5 h-5 text-brandAccent"></i></div> Onboard Courier';
-            
             document.getElementById('form_internal_index').value = '';
             document.getElementById('form_id').value = '';
             document.getElementById('form_name').value = '';
@@ -530,7 +524,6 @@
             return;
         }
 
-        // Duplicate Name Check
         const isDuplicate = fleetData.some((emp, i) => {
             if (index !== '' && i == index) return false;
             return emp.name.toLowerCase() === newName.toLowerCase();
@@ -543,8 +536,7 @@
         }
 
         const payload = {
-            id: newId,
-            name: newName,
+            id: newId, name: newName,
             phone: document.getElementById('form_phone').value,
             email: document.getElementById('form_email').value,
             city: document.getElementById('form_city').value || 'Unspecified',
@@ -663,7 +655,7 @@
         closeDeleteModal();
     }
 
-    // --- EXCEL IMPORT / EXPORT (Using SheetJS) ---
+    // --- EXCEL IMPORT / EXPORT ---
     function processExcelImport(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -735,9 +727,7 @@
         const checkboxes = document.querySelectorAll('.row-checkbox:checked');
         if (checkboxes.length === 0) { showToast("Select records using checkboxes first.", 'error'); return; }
         
-        checkboxes.forEach(cb => {
-            fleetData[cb.value].status = newStatus;
-        });
+        checkboxes.forEach(cb => { fleetData[cb.value].status = newStatus; });
         
         saveData();
         renderTable();
@@ -768,7 +758,6 @@
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
         
-        // Safety check if the element exists before modifying
         const masterCheckbox = document.getElementById('masterCheckbox');
         if (masterCheckbox) masterCheckbox.checked = false;
 
@@ -779,7 +768,6 @@
         let activeCount = 0; let inactiveCount = 0;
 
         const filteredData = fleetData.filter((entry, index) => {
-            // Keep track of original index for editing
             entry.originalIndex = index;
             
             const passPlat = fPlat === 'ALL' ? true : entry.platform === fPlat;
@@ -840,6 +828,6 @@
 
     // Initialize App on Load
     document.addEventListener('DOMContentLoaded', initApp);
-</script>
+    </script>
 </body>
 </html>
