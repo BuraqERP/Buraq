@@ -619,9 +619,8 @@
         // Do NOT fetch data immediately. Wait for the user to log in via authenticateAndLoad()
     }
 
-    // --- CLOUD AUTHENTICATION (BULLETPROOF GITHUB API WORKFLOW) ---
+    /// --- CLOUD AUTHENTICATION (HARDCODED PASS + TRUE TOKEN VERIFICATION) ---
     async function authenticateAndLoad() {
-        // Scrubs out invisible Unicode characters, emojis, and non-standard text
         const token = document.getElementById('auth_token').value.replace(/[^\x20-\x7E]/g, '').trim();
         const pass = document.getElementById('auth_pass').value;
         const errBox = document.getElementById('auth_error');
@@ -629,20 +628,44 @@
         const btnText = document.getElementById('auth_btn_text');
         const btnIcon = document.getElementById('auth_btn_icon');
 
-        if (!token || !pass) {
+        // 1. HARDCODED PASSWORD CHECK
+        if (pass !== 'adminadmin') {
             errBox.classList.remove('hidden');
-            errMsg.innerText = "Both GitHub Token and Master Password are required.";
+            errMsg.innerText = "Invalid Master Password.";
+            return;
+        }
+
+        // 2. EMPTY TOKEN CHECK
+        if (!token) {
+            errBox.classList.remove('hidden');
+            errMsg.innerText = "GitHub Token is required.";
             return;
         }
 
         // UI Loading State
         errBox.classList.add('hidden');
-        btnText.innerText = "Authenticating & Decrypting...";
+        btnText.innerText = "Verifying Token...";
         btnIcon.setAttribute('data-lucide', 'loader-2');
         btnIcon.classList.add('animate-spin');
         lucide.createIcons();
 
         try {
+            // 3. TRUE TOKEN VERIFICATION
+            // We ping GitHub's core user endpoint to see if the token is genuinely valid.
+            const userCheck = await fetch('https://api.github.com/user', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+
+            if (!userCheck.ok) {
+                throw new Error("Invalid GitHub Token. Access denied by GitHub.");
+            }
+
+            // Token is real! Let's get the database.
+            btnText.innerText = "Decrypting Database...";
+            
             const response = await fetch(`https://api.github.com/repos/${window.cloudConfig.owner}/${window.cloudConfig.repo}/contents/${window.cloudConfig.path}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -679,7 +702,7 @@
             const decryptedString = decryptedBytes.toString(CryptoJS.enc.Utf8);
             
             if (!decryptedString) {
-                throw new Error("Invalid Master Password. Decryption failed.");
+                throw new Error("Decryption failed. Database may be corrupted.");
             }
 
             // Success! Load into memory
