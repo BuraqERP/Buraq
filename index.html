@@ -73,7 +73,7 @@
             
             <div class="flex items-center gap-3 w-full lg:w-auto">
                 <button onclick="openSecondApp()" class="bg-emerald-600/90 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 border border-emerald-500 shadow-md flex-1 lg:flex-none">
-                    <i data-lucide="layout-dashboard" class="w-4 h-4 text-emerald-100"></i> Open Fleet Database
+                    <i data-lucide="layout-dashboard" class="w-4 h-4 text-emerald-100"></i> Open Fleet Record
                 </button>
                 <button onclick="openFormModal()" class="bg-blue-800/80 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 border border-blue-600 flex-1 lg:flex-none">
                     <i data-lucide="file-plus" class="w-4 h-4 text-blue-200"></i> Add Record
@@ -798,33 +798,63 @@ async function manualSync() {
     function togglePasteModal(show) { const m = document.getElementById('pasteModal'); show ? m.classList.remove('hidden') : m.classList.add('hidden'); }
     
     function openSummary(internalId) {
-        const entry = fleetData.find(e => e._internalId === internalId);
-        if(!entry) return;
-        const calc = calculateFormulas(entry);
-        
-        document.getElementById('sum_courier_name').innerText = entry.nume;
-        document.getElementById('sum_week_header').innerText = formatDisplayDate(entry.startDate, entry.endDate);
-        
-        let pColor = '#1f2937';
-        if(entry.platform === 'WOLT') pColor = '#0ea5e9';
-        if(entry.platform === 'GLOVO') pColor = '#f59e0b';
-        if(entry.platform === 'BOLT') pColor = '#10b981';
-        
-        const platHeader = document.getElementById('sum_platform_header');
-        platHeader.innerText = entry.platform;
-        platHeader.style.backgroundColor = pColor;
+    const entry = fleetData.find(e => e._internalId === internalId);
+    if (!entry) return;
+    
+    const calc = calculateFormulas(entry);
+    
+    const totalEarning = calc.totalEarn;
+    const commission = totalEarning * 0.10; // Fixed 10% representation
+    const afterCommission = totalEarning - commission;
+    const appFee = Math.abs(entry.taxa);
+    const contract = Math.abs(entry.contract);
+    const cashOffset = Math.abs(entry.compensare);
+    const totalPaid = afterCommission - appFee - contract - cashOffset;
 
-        document.getElementById('sum_tot_earn').innerText = calc.totalEarn.toFixed(2);
-        document.getElementById('sum_comm_val').innerText = calc.stdComm.toFixed(2);
-        document.getElementById('sum_after_comm').innerText = (calc.totalEarn - calc.stdComm).toFixed(2);
-        document.getElementById('sum_app_fee').innerText = entry.taxa > 0 ? `-${entry.taxa.toFixed(2)}` : '0.00';
-        document.getElementById('sum_contract').innerText = entry.contract > 0 ? `-${entry.contract.toFixed(2)}` : '0.00';
-        document.getElementById('sum_offset').innerText = entry.compensare > 0 ? `-${entry.compensare.toFixed(2)}` : '0.00';
-        document.getElementById('sum_total_paid').innerText = calc.salary.toFixed(2);
-
-        document.getElementById('summaryModal').classList.remove('hidden');
+    // Set Header Info
+    document.getElementById('sum_courier_name').innerText = entry.nume;
+    document.getElementById('sum_week_header').innerText = formatDisplayDate(entry.startDate, entry.endDate);
+    
+    // Set Earnings & Commission
+    document.getElementById('sum_tot_earn').innerText = totalEarning.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    
+    // Ensure the percentage text is set if the HTML element exists
+    if(document.getElementById('sum_comm_pct')) {
+         document.getElementById('sum_comm_pct').innerText = '10%';
     }
     
+    document.getElementById('sum_comm_val').innerText = commission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    document.getElementById('sum_after_comm').innerText = afterCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    
+    // Set Deductions (Added negative signs for receipt clarity)
+    document.getElementById('sum_app_fee').innerText = appFee > 0 ? `-${appFee.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '0.00';
+    
+    // THIS IS THE FIXED ID: sum_contract_fee
+    document.getElementById('sum_contract_fee').innerText = contract > 0 ? `-${contract.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '0.00';
+    
+    document.getElementById('sum_offset').innerText = cashOffset > 0 ? `-${cashOffset.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '0.00';
+    
+    // Set Final Payout
+    document.getElementById('sum_total_paid').innerText = totalPaid.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    // Handle Platform Colors
+    const platHeader = document.getElementById('sum_platform_header');
+    platHeader.innerText = entry.platform;
+
+    if (entry.platform === 'GLOVO') {
+        platHeader.style.backgroundColor = '#f59e0b'; // Amber
+        platHeader.style.color = '#ffffff';
+    } else if (entry.platform === 'BOLT') {
+        platHeader.style.backgroundColor = '#10b981'; // Emerald
+        platHeader.style.color = '#ffffff';
+    } else { 
+        platHeader.style.backgroundColor = '#0ea5e9'; // Sky (Wolt)
+        platHeader.style.color = '#ffffff';
+    }
+
+    // Open Modal
+    document.getElementById('summaryModal').classList.remove('hidden');
+}    
     function closeSummary() { document.getElementById('summaryModal').classList.add('hidden'); }
 
     function toggleExportModal(show) {
@@ -1105,7 +1135,7 @@ async function manualSync() {
                     <i data-lucide="users" class="w-6 h-6 text-blue-100"></i>
                 </div>
                 <div>
-                    <h1 class="text-2xl font-extrabold tracking-wide uppercase text-slate-50">Courier Database</h1>
+                    <h1 class="text-2xl font-extrabold tracking-wide uppercase text-slate-50">Courier Records</h1>
                 </div>
             </div>
             
